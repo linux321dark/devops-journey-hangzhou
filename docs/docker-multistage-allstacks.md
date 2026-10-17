@@ -3,12 +3,13 @@
 > 适用：Day 1 上午理论 → 下午实战的扩展素材。覆盖杭州企业主流技术栈：**Node / Go / Java(Spring Boot) / Python / Ruby / PHP / Rust**，以及基础设施类 **MySQL / Redis / Kafka / RocketMQ / RabbitMQ / Nginx 静态前端**。
 >
 > **文档 / 资料（国内优先，官方备选）**（2026-10-17 核实）：
-> - 【国内·首选】阿里云容器镜像服务「官方镜像加速」帮助（中文）：https://help.aliyun.com/knowledge_detail/60750.html
+> - 【国内·官方文档中文镜像·首选】Docker 文档中文站（docs.docker.com 完整中文镜像，权威且中文）：首页 https://docs.docker.top/index.htm ｜ 多阶段构建 https://docs.docker.top/build/building/multi-stage/ ｜ Dockerfile 最佳实践 https://docs.docker.top/develop/develop-images/dockerfile_best-practices/
+> - 【国内·官方文档中文镜像·备选】Docker 中文网（另一份 docs.docker.com 中文镜像）：http://docker.github.net.cn/
+> - 【国内】阿里云容器镜像服务「官方镜像加速」帮助（中文）：https://help.aliyun.com/knowledge_detail/60750.html
 > - 【国内】阿里云开发者社区《Docker 下载加速》实操：https://developer.aliyun.com/article/1694884
 > - 【国内】多阶段构建实战 Node 1GB→50MB：https://hipro.cc/category/devops/docker-multi-stage-build-image-optimization-tutorial
 > - 【国内】Spring Boot 多阶段全流程：https://m.jb51.net/server/36980267b.htm
-> - 【官方·备选 / 权威兜底】多阶段构建：https://docs.docker.com/build/building/multi-stage/
-> - 【官方·备选】Dockerfile 最佳实践：https://docs.docker.com/develop/develop-images/dockerfile_best-practices/
+> - 【官方·英文·兜底】https://docs.docker.com/build/building/multi-stage/ （内容与中文镜像一致，仅作英文兜底）
 >
 > 各语言基础镜像版本请到 https://hub.docker.com 核对最新 tag，本文钉版本号仅为示例，请按实际替换。
 >
