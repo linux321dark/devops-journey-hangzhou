@@ -2,11 +2,22 @@
 
 > 适用：Day 1 上午理论 → 下午实战的扩展素材。覆盖杭州企业主流技术栈：**Node / Go / Java(Spring Boot) / Python / Ruby / PHP / Rust**，以及基础设施类 **MySQL / Redis / Kafka / RocketMQ / RabbitMQ / Nginx 静态前端**。
 >
-> 已验证权威链接（2026-10-17 实测在线）：
-> - 多阶段构建官方文档：https://docs.docker.com/build/building/multi-stage/
-> - Dockerfile 最佳实践：https://docs.docker.com/develop/develop-images/dockerfile_best-practices/
+> **文档 / 资料（国内优先，官方备选）**（2026-10-17 核实）：
+> - 【国内·首选】阿里云容器镜像服务「官方镜像加速」帮助（中文）：https://help.aliyun.com/knowledge_detail/60750.html
+> - 【国内】阿里云开发者社区《Docker 下载加速》实操：https://developer.aliyun.com/article/1694884
+> - 【国内】多阶段构建实战 Node 1GB→50MB：https://hipro.cc/category/devops/docker-multi-stage-build-image-optimization-tutorial
+> - 【国内】Spring Boot 多阶段全流程：https://m.jb51.net/server/36980267b.htm
+> - 【官方·备选 / 权威兜底】多阶段构建：https://docs.docker.com/build/building/multi-stage/
+> - 【官方·备选】Dockerfile 最佳实践：https://docs.docker.com/develop/develop-images/dockerfile_best-practices/
 >
 > 各语言基础镜像版本请到 https://hub.docker.com 核对最新 tag，本文钉版本号仅为示例，请按实际替换。
+>
+> ### 镜像拉取：国内优先（你已在环境/仓库配置阿里云镜像）
+> 你已配置阿里云镜像加速器，因此本文所有 `FROM node:22-alpine` 等官方镜像**无需改写**——Docker 守护进程通过 `registry-mirrors` 自动把拉取请求路由到阿里云国内节点（反向代理 + 缓存），对你完全透明，命令照写 `docker pull node:22-alpine` 即可。
+> - **验证生效**：`docker info | grep "Registry Mirrors" -A 2`（应看到你的 `*.mirror.aliyuncs.com`）
+> - **⚠️ 关键限制**：阿里云加速器**已停止同步最新镜像**，极新 tag（如刚发布的 `golang:1.26`）可能拉不到。兜底：① ACR「制品订阅」主动同步海外源镜像；② 临时开 Clash 代理直连 Docker Hub；③ 改用稍旧但已缓存的 tag。
+> - **备选公共源**（未配专属加速器时作 failover）：网易 `https://hub-mirror.c.163.com`、中科大 `https://docker.mirrors.ustc.edu.cn`、腾讯云 `https://mirror.ccs.tencentyun.com`。
+> - 如需显式走代理（不依赖全局 mirror）：在 `daemon.json` 加 `"proxies": {"https-proxy":"http://127.0.0.1:7897"}`（端口以 Clash Mixed Port 为准）。
 
 ---
 
