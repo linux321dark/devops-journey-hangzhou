@@ -552,9 +552,10 @@ cd ..
 
 ```dockerfile
 # rust-demo/Dockerfile
-# 注意：基础镜像必须 >= 1.85.0——Cargo 1.83 不支持 edition2024，而 actix-web 依赖树里的
-# 传递依赖 cpufeatures 等已用 edition2024，1.83 解析其 Cargo.toml 会直接失败（feature `edition2024` is required）。
-FROM rust:1.87.0-alpine AS build
+# 注意：Rust 是「快速演进」的语言工具链，钉死具体补丁（如 1.83.0 / 1.87.0）会反复被 MSRV / edition 卡死
+# （1.83 不认 edition2024，1.87 又被上游依赖 rust-version>=1.88 拒绝）。改用浮动主版本 `rust:1-alpine`，
+# 永远指向最新 stable，既不会被 MSRV 拒、也不会 not found。若要可复现，build 后 `rustc --version` 记死实际版本即可。
+FROM rust:1-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache musl-dev \
  && mkdir -p /usr/local/cargo \
@@ -723,4 +724,4 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 - **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
 - **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
 - **push `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`**（ACR 专属）：Docker 29.x 默认给镜像附 provenance 空 manifest，ACR 个人版不认。**正解**：不要用 `docker build` + `docker push`，改用 `docker buildx build --provenance=false --sbom=false -t <镜像> --push .` 直接构建并推送；或先 `export BUILDX_PROVENANCE=false` 永久关闭。与镜加无关、与镜像内容无关。
-- **Rust `cargo build` 报 `feature edition2024 is required ... not stabilized in this version of Cargo (1.83.0)`**：基础镜像 `rust:1.83.0-alpine` 太旧，`edition2024` 在 Rust 1.85.0 才进 stable，而 `actix-web` 依赖树传递进来的 `cpufeatures` 等已用该 edition，旧 Cargo 解析其 `Cargo.toml` 直接失败。**正解**：把基础镜像升到 `rust:1.87.0-alpine`（≥1.85.0）。与镜像源/网络无关，纯粹升工具链版本。
+- **Rust `cargo build` 报 `feature edition2024 is required ... not stabilized in this version of Cargo (1.83.0)`** 或 **`rustc 1.87.0 is not supported by the following packages`**（MSRV 检查）：都是基础镜像 Rust 太旧被上游依赖拒绝。`edition2024` 在 Rust 1.85.0 才进 stable；而 `actix-web` 依赖树里较新的传递依赖（cpufeatures 等）会要求 `rust-version >= 1.88+`，于是 1.83 / 1.87 都被拒。**正解**：不要反复钉具体补丁（会一直被新 MSRV 卡），直接用浮动主版本 `rust:1-alpine`（永远最新 stable）。与镜像源/网络无关，纯粹升工具链版本。
