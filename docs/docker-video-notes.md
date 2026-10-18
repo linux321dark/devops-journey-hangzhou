@@ -28,23 +28,56 @@
 
 ---
 
-## 三、Dockerfile 核心指令速查
+## 三、Dockerfile 核心指令速查（分三类 + 案例）
 
-| 指令 | 作用 | 关键注意 |
+> 分类逻辑：① **镜像类**——构建期指令，决定"镜像里有什么"；② **容器类**——运行期指令，决定"容器怎么跑"；③ **仓库类**——并非 Dockerfile 指令，而是镜像构建后与仓库交互的 `docker` CLI 操作（Day 1 下午推 ACR 必用），一并列出。
+
+### 3.1 镜像类指令（构建期）
+
+| 指令 | 作用 | 案例 | 关键注意 |
+| --- | --- | --- | --- |
+| `FROM` | 指定基础镜像（第一条指令） | `FROM golang:1.21-alpine AS builder` | 多阶段可多次出现，配 `AS <名>` |
+| `ARG` | 构建期变量（不写入镜像） | `ARG VER=1.21` → `FROM golang:${VER}` | 与 ENV 区别在生命周期；传版本号首选 |
+| `ENV` | 设置环境变量（写入镜像） | `ENV NODE_ENV=production TZ=Asia/Shanghai` | 会固化进镜像，密钥别放这 |
+| `WORKDIR` | 切换工作目录（自动建目录） | `WORKDIR /app` | 比 `RUN cd` 清晰，后续指令基于此路径 |
+| `RUN` | 构建期执行命令（装依赖/编译） | `RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*` | 用 `&&` 连命令并清缓存 |
+| `COPY` | 复制本地文件进镜像 | `COPY package.json ./` / 多阶段 `COPY --from=builder /app/dist ./dist` | 跨阶段搬运靠 `--from` |
+| `ADD` | 类似 COPY，额外支持 tar 自动解压 / 远程 URL | `ADD app.tar.gz /app/` | 一般优先 COPY；需解压 tar 才用 ADD |
+| `LABEL` | 添加镜像元数据（键值对） | `LABEL maintainer="dev@example.com" version="1.0"` | 便于检索/溯源，不影响运行 |
+| `ONBUILD` | 延迟指令，被 FROM 继承时触发 | `ONBUILD COPY . /app` | 做基础镜像模板时用，慎用 |
+
+### 3.2 容器类指令（运行期）
+
+| 指令 | 作用 | 案例 | 关键注意 |
+| --- | --- | --- | --- |
+| `CMD` | 容器启动默认命令（可被 `docker run` 覆盖） | `CMD ["node","dist/index.js"]` | 多条只生效最后一条 |
+| `ENTRYPOINT` | 容器主命令（不可被覆盖，参数追加） | `ENTRYPOINT ["java","-jar"]` | 固化程序本体时用 |
+| `USER` | 指定运行用户（安全必做：非 root） | `USER 1000` / `USER appuser` | 默认 root，生产必切 |
+| `EXPOSE` | 声明暴露端口（仅文档作用，不真正映射） | `EXPOSE 8080 9090` | 真正映射靠 `docker run -p` |
+| `VOLUME` | 声明挂载点（数据持久化/与主机共享） | `VOLUME ["/data","/var/log"]` | 运行期数据用挂载，别写进镜像层 |
+| `HEALTHCHECK` | 声明容器健康检测 | `HEALTHCHECK --interval=30s CMD curl -f http://localhost:8080/health \|\| exit 1` | 配合编排做自愈/流量剔除 |
+| `STOPSIGNAL` | 容器停止时发送的信号 | `STOPSIGNAL SIGTERM` | 优雅停机用 |
+| `SHELL` | 指定运行 RUN/CMD/ENTRYPOINT 的 shell | `SHELL ["/bin/bash","-c"]` | Windows 镜像或需 bash 特性时 |
+
+> **挂载与网络补充**（视频必讲、易漏）：
+> - **挂载（持久化数据）**：Dockerfile 里 `VOLUME` 只"声明"挂载点；真正挂载在运行时做——`docker run -v /host/data:/data myapp`（主机目录）或 `docker run -v myvol:/data myapp`（命名卷，Docker 管理）。**数据库/日志/配置必须挂卷，否则容器一删数据全没**。
+> - **网络**：Dockerfile 只有 `EXPOSE` 做端口声明；真正联网在运行时——`docker run -p 8080:8080`（端口映射）、`docker run --network mynet`（自定义网络，容器间用服务名互访）。Compose 里用 `ports:` + `networks:` 配置。
+
+> `CMD` vs `ENTRYPOINT`：ENTRYPOINT 定"程序"，CMD 给"默认参数"。生产常用 `ENTRYPOINT ["java","-jar"]` + `CMD ["app.jar"]` 组合——`docker run myapp other.jar` 能覆盖 jar 名。
+
+### 3.3 仓库类操作（构建后 · 与镜像仓库交互）
+
+> 以下不是 Dockerfile 指令，而是 `docker` CLI 对镜像仓库（Docker Hub / 阿里云 ACR / 私有仓库）的操作。Day 1 下午推 ACR 个人版必用。
+
+| 操作 | 作用 | 案例 |
 | --- | --- | --- |
-| `FROM` | 指定基础镜像（**第一条指令**） | 多阶段里可多次出现，配 `AS <名>` |
-| `RUN` | 构建期执行命令（装依赖/编译） | 用 `&&` 连命令，末尾清理缓存 |
-| `COPY` | 复制本地文件进镜像 | 多阶段里用 `COPY --from=<阶段>` 跨阶段搬运 |
-| `ADD` | 类似 COPY，但支持 tar 自动解压 / 远程 URL | 一般优先用 `COPY`，少用 `ADD` |
-| `CMD` | 容器启动默认命令（**可被 `docker run` 覆盖**） | 多条只生效最后一条 |
-| `ENTRYPOINT` | 容器主命令（**不可被覆盖**，参数追加） | 固化启动行为时用 |
-| `ENV` | 设置环境变量 | 会写进镜像，谨慎放密钥 |
-| `WORKDIR` | 切换工作目录（类似 `cd`，会创建目录） | 比 `RUN cd` 更清晰 |
-| `EXPOSE` | 声明暴露端口（仅文档作用，不真正映射） | 真正映射靠 `docker run -p` |
-| `USER` | 指定运行用户（**安全必做：非 root**） | 默认 root，生产要切 |
-| `ARG` | 构建期变量（构建后不存在于镜像） | 适合传版本号；与 `ENV` 区别在生命周期 |
+| `docker tag` | 给镜像打仓库地址标签 | `docker tag myapp:1.0 registry.cn-hangzhou.aliyuncs.com/yourns/myapp:1.0` |
+| `docker push` | 推送镜像到仓库 | `docker push registry.cn-hangzhou.aliyuncs.com/yourns/myapp:1.0` |
+| `docker pull` | 从仓库拉取镜像 | `docker pull registry.cn-hangzhou.aliyuncs.com/yourns/myapp:1.0` |
+| `docker images` | 查看本地镜像（验证体积） | `docker images \| grep myapp` |
+| `docker history` | 查看镜像层构成 | `docker history myapp:1.0` |
 
-> `CMD` vs `ENTRYPOINT`：ENTRYPOINT 定"程序"，CMD 给"默认参数"。生产常用 `ENTRYPOINT ["java","-jar"]` + `CMD ["app.jar"]` 组合。
+> ACR 实操提示：推送前先 `docker login --username=你的阿里云账号 registry.cn-hangzhou.aliyuncs.com`（密码用 ACR 登录密码/临时令牌），再 `tag` + `push`。详见 `docker-multistage-allstacks.md` 与学习计划 §6。
 
 ---
 
@@ -121,6 +154,74 @@ CMD ["node","dist/index.js"]
 ```
 > 把 `package.json` 提前单独 COPY，是"变动频率从低到高"排层的经典手法，CI 提速明显。
 
+**Python 范例（依赖隔离搬运 / 纯 Python distroless）**：
+```dockerfile
+# 阶段1：安装依赖 + 打包（依赖装进独立前缀，便于整体搬运）
+FROM python:3.12-slim AS builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+COPY . .
+RUN pip install --no-cache-dir --prefix=/install .
+# 阶段2：运行（只带运行时 + 依赖，无构建缓存）
+FROM python:3.12-slim
+WORKDIR /app
+COPY --from=builder /install /usr/local
+COPY --from=builder /app /app
+USER 1000
+CMD ["python","/app/main.py"]
+```
+> 关键点：`--prefix=/install` 把依赖装进独立目录再整体搬，避免把构建缓存带进最终镜像；`--no-cache-dir` 不留存 pip 缓存。纯 Python 也可上 `gcr.io/distroless/python3` 进一步瘦身。含 C 扩展的库（如 numpy）用此方式搬运预编译 wheel 最稳。
+
+**Ruby (Rails) 范例**：
+```dockerfile
+FROM ruby:3.3-slim AS builder
+WORKDIR /app
+COPY Gemfile Gemfile.lock ./
+RUN bundle install --path /vendor/bundle
+COPY . .
+RUN bundle exec rake assets:precompile
+FROM ruby:3.3-slim
+WORKDIR /app
+COPY --from=builder /app /app
+COPY --from=builder /vendor/bundle /vendor/bundle
+ENV RAILS_ENV=production
+USER 1000
+EXPOSE 3000
+CMD ["bundle","exec","puma","-C","config/puma.rb"]
+```
+> 把 `Gemfile` 提前单独 COPY 复用 bundle 缓存；assets 预编译放构建阶段，运行阶段只拿成品。
+
+**PHP (PHP-FPM) 范例**：
+```dockerfile
+FROM composer:2 AS vendor
+WORKDIR /app
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --no-autoloader --ignore-platform-reqs
+COPY . .
+RUN composer dump-autoload --no-dev --optimize
+FROM php:8.3-fpm-alpine
+WORKDIR /var/www/html
+COPY --from=vendor /app /var/www/html
+USER www-data
+```
+> PHP 主流多阶段：composer 阶段装依赖，运行阶段用 `php:8.3-fpm-alpine`；nginx 单独容器反向代理（见 `docker-multistage-allstacks.md` Nginx 节）。
+
+**Rust 范例（→ scratch）**：
+```dockerfile
+FROM rust:1.80-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release
+FROM scratch
+COPY --from=builder /app/target/release/myapp /myapp
+USER 65532:65532
+ENTRYPOINT ["/myapp"]
+```
+> Rust 静态编译产物可直接跑 scratch；用 `rust:alpine` + musl 目标交叉编译可得纯静态二进制，体积 10MB 级。
+
+> **范例覆盖说明**：以上覆盖杭州企业最常见的应用语言（Node / Go / Java / Python / Ruby / PHP / Rust）。MySQL / Redis / Kafka / RocketMQ / RabbitMQ / Nginx 等**基础设施/中间件**的多阶段（烘焙配置、源码编译瘦身、自定义运行时）范例在 `docker-multistage-allstacks.md` 全栈手册，不在本笔记重复。
+
 ---
 
 ## 五、体积优化实战 checklist（可直接用）
@@ -155,7 +256,7 @@ CMD ["node","dist/index.js"]
 
 - 本笔记对应 `docker-multistage-allstacks.md` 的「语法三要素 / 最佳实践 10 条 / 自测 7 题」
 - 看完本笔记，直接做手册末尾**上午验收自测 7 题**，能口述答出 = 上午达标
-- 下午实战：任选 Java / Go / Python 写 Dockerfile，优化到 `<100MB`，推 ACR 个人版验证
+- 下午实战：任选上面任一语言（Node / Go / Java / Python / Ruby / PHP / Rust）写 Dockerfile，优化到 `<100MB`，推 ACR 个人版验证
 
 ---
 
