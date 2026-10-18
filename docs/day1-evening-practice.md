@@ -26,7 +26,42 @@ pwd        # 记住这个目录，下文全相对它
 - [x] `docker info` 无报错，镜像加速器为阿里云专属地址（内网最快，见学习计划 §6 / 坑16）
 - [ ] ACR 个人版仓库已建：登录 `https://cr.console.aliyun.com` → 个人版 → 命名空间（如 `devops-journey`）→ 仓库（如 `day1-demo`）
 - [x] 已 `cd` 到工作目录（本文约定 `~/devops-day1`）
+- [ ] 已按 §0.4 安装 ECS 主机基础工具链
 - [ ] 已按 §0.5 配好国内包管理器镜像源（否则拉依赖超时）
+
+---
+
+## 0.4 ECS 主机基础工具链安装（前置一次性）
+
+> 全新 ECS（Ubuntu/Debian）默认没有 Go / Node / pip / Composer / Ruby。§0.5 的全局配置与 §2 主机侧 `go mod tidy` / `npm install` 都依赖这些工具，先一次性装好（Docker 镜像内已自带对应工具+镜像，这里只为满足**主机侧**步骤）。
+> 注：即使不装主机工具，纯 `docker build` 也能跑（Dockerfile 已内置镜像）；装主机工具是为了你能在本机先解析依赖、生成 lockfile、本地验证。
+
+```bash
+# 0. 系统基础 + Python/pip + Ruby/Bundler + Composer（apt 直装）
+sudo apt-get update
+sudo apt-get install -y curl wget git build-essential ca-certificates \
+  python3 python3-pip python3-venv \
+  ruby ruby-dev bundler \
+  composer
+
+# 1. Go（apt 版本过旧会卡 go 1.23 指令，改用阿里云镜像二进制；版本号以镜像站最新 1.23.x 为准）
+GO_VER=1.23.4
+wget -q https://mirrors.aliyun.com/golang/go${GO_VER}.linux-amd64.tar.gz -O /tmp/go.tgz \
+  && rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz \
+  && ln -sf /usr/local/go/bin/go /usr/local/bin/go
+go version
+
+# 2. Node（apt 版本过旧，改用 npmmirror 二进制；版本号以镜像站最新 v22 为准）
+NODE_VER=22.11.0
+wget -q https://cdn.npmmirror.com/binaries/node/v${NODE_VER}/node-v${NODE_VER}-linux-x64.tar.gz -O /tmp/node.tgz \
+  && tar -C /usr/local -xzf /tmp/node.tgz --strip-components=1
+node -v && npm -v
+
+# 3. Rust（主机侧非必需，Docker 内已构建；如需本机测，走 rsproxy 国内源）
+# curl --proto '=https' --tlsv1.2 -sSf https://rsproxy.cn/rustup-init.sh | sh
+```
+
+> 若 `composer` / `gem` 仍报找不到：确认上一步 apt 已成功（你之前就是卡在没装）。Alibaba Cloud Linux 用 `yum`/`dnf` 而非 `apt`，本清单按 Ubuntu/Debian 写。
 
 ---
 
