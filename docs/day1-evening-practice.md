@@ -23,7 +23,7 @@ pwd        # 记住这个目录，下文全相对它
 ```
 
 - [x] ECS 可 SSH 登录
-- [x] `docker info` 无报错，镜像加速器为阿里云专属地址（内网最快，见学习计划 §6 / 坑16）
+- [x] 已 `docker info | grep -iA3 "registry mirrors"` 确认**只**列出你的阿里云实例专属地址 `https://<实例ID>.mirror.aliyuncs.com`（内网最快）；若为空 / 含第三方死源(xuanyuan/daocloud/nju) / 公共 `mirror.aliyuncs.com`，先按学习计划 §6 / 坑16 改 `/etc/docker/daemon.json` 并 `sudo systemctl restart docker` 再 build（否则 `FROM` 会报 **not found**）
 - [ ] ACR 个人版仓库已建：登录 `https://cr.console.aliyun.com` → 个人版 → 命名空间（如 `devops-journey`）→ 仓库（如 `day1-demo`）
 - [x] 已 `cd` 到工作目录（本文约定 `~/devops-day1`）
 - [ ] 已按 §0.4 安装 ECS 主机基础工具链
@@ -192,7 +192,7 @@ cd ..
 
 ```dockerfile
 # node-demo/Dockerfile
-FROM node:22-alpine AS build
+FROM node:22.11.0-alpine AS build
 ENV npm_config_registry=https://registry.npmmirror.com
 WORKDIR /app
 COPY package*.json ./
@@ -201,7 +201,7 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
-FROM node:22-alpine AS runtime
+FROM node:22.11.0-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
@@ -247,7 +247,9 @@ cd ..
 
 ```dockerfile
 # go-demo/Dockerfile
-FROM golang:1.23 AS build
+# 注意：基础镜像必须钉死到具体补丁版本（golang:1.23 这种浮动 tag 经镜像加速常解析为 not found）。
+# 此处 1.23.4 与 §0.4 主机安装的 GO_VER 保持一致。
+FROM golang:1.23.4 AS build
 # 国内 Go 代理（ECS 直连 proxy.golang.org 超时），保证 build 内 go mod download 可用
 ENV GOPROXY=https://mirrors.aliyun.com/goproxy/,https://goproxy.cn,direct
 ENV GOSUMDB=sum.golang.google.cn
@@ -371,7 +373,7 @@ cd ..
 
 ```dockerfile
 # py-demo/Dockerfile
-FROM python:3.12-slim AS build
+FROM python:3.12.7-slim AS build
 ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
@@ -379,7 +381,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 COPY . .
 
-FROM python:3.12-slim AS runtime
+FROM python:3.12.7-slim AS runtime
 WORKDIR /app
 COPY --from=build /install /usr/local
 COPY --from=build /app /app
@@ -416,7 +418,7 @@ cd ..
 
 ```dockerfile
 # ruby-demo/Dockerfile
-FROM ruby:3.3-slim AS build
+FROM ruby:3.3.6-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 COPY Gemfile ./
@@ -425,7 +427,7 @@ RUN bundle config set --global mirror.https://rubygems.org https://gems.ruby-chi
  && bundle install --jobs 4
 COPY . .
 
-FROM ruby:3.3-slim AS runtime
+FROM ruby:3.3.6-slim AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bundle /usr/local/bundle
@@ -525,7 +527,7 @@ cd ..
 
 ```dockerfile
 # rust-demo/Dockerfile
-FROM rust:1.83-alpine AS build
+FROM rust:1.83.0-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache musl-dev \
  && mkdir -p /usr/local/cargo \
@@ -614,11 +616,11 @@ docker pull registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 **6.1 Nginx 静态前端（Node 构建 → Nginx 托管，约 50MB）**
 
 ```dockerfile
-FROM node:22-alpine AS build
+FROM node:22.11.0-alpine AS build
 WORKDIR /app
 COPY package*.json ./ && RUN npm ci
 COPY . . && RUN npm run build
-FROM nginx:1.27-alpine AS runtime
+FROM nginx:1.27.4-alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 ```
@@ -671,6 +673,7 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 
 ## 卡点自救
 
+- **`docker build` 第一步 `load metadata for docker.io/library/xxx: not found`（404 而非超时）**：这是**镜像源坏了**，不是 tag 真的没有。常见成因：ECS 的 `/etc/docker/daemon.json` 沿用了 Mac 那套第三方死源（xuanyuan/daocloud/nju）或填了已停用的公共 `mirror.aliyuncs.com`，dockerd 查询这些源拿到错误响应，BuildKit 就报 not found。修正：ECS 的 daemon.json **只留**实例专属地址 `{"registry-mirrors":["https://<实例ID>.mirror.aliyuncs.com"]}`，`sudo systemctl restart docker`，再 `docker info | grep -iA3 "registry mirrors"` 确认生效；镜加正常后即使浮动 tag 也能解析，但稳妥起见所有基础镜像已钉死到具体补丁版本（见各 Dockerfile 的 `FROM`）。
 - **pull 超时 / 基础镜像拉不到**：确认第 0 步 `Registry Mirrors` 首位为阿里云专属 `https://<实例ID>.mirror.aliyuncs.com`；极新 tag（如刚发的基础镜像）专属加速器可能未同步，临时 `export https_proxy=http://127.0.0.1:7897` 或改稍旧已缓存 tag。
 - **`docker build`/`pull` 日志显示 `docker.io/library/...` 但怀疑没走镜加（关键误区）**：先分清两种可能。① 镜加是**透明代理**，日志里镜像规范名本就显示 `docker.io/library/xxx`，**不代表真直连**；判断真实是否走镜加看两点：`docker info | grep -iA3 "registry mirrors"` 是否列出你的阿里云地址，以及 `curl -sI https://<实例ID>.mirror.aliyuncs.com/v2/` 端点是否存活（200/401 均算通）。② 真没走：多半是改了 `/etc/docker/daemon.json` 后**没 `sudo systemctl restart docker` 让配置生效**，或 ECS 上配的是已停用的公共 `mirror.aliyuncs.com` / Mac 那套第三方死源 → dockerd 镜像拉取失败后**回退直连 docker.io**（ECS 上直连必超时）。修正：ECS 的 daemon.json 只留 `https://<实例ID>.mirror.aliyuncs.com`（同地域内网最快最稳），改完务必 `restart docker`。注意：阿里云镜加**只加速 docker.io(Docker Hub)**，不加速 gcr.io/quay.io/registry.k8s.io 等；你 Day1 基础镜像全是 docker.io，配好即加速。
 - **Go 跑 scratch 报 `no such file` / panic**：漏 `CGO_ENABLED=0`，重 build；需出网再确认带了 `ca-certificates.crt`。
