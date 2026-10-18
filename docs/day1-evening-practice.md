@@ -672,6 +672,7 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 ## 卡点自救
 
 - **pull 超时 / 基础镜像拉不到**：确认第 0 步 `Registry Mirrors` 首位为阿里云专属 `https://<实例ID>.mirror.aliyuncs.com`；极新 tag（如刚发的基础镜像）专属加速器可能未同步，临时 `export https_proxy=http://127.0.0.1:7897` 或改稍旧已缓存 tag。
+- **`docker build`/`pull` 日志显示 `docker.io/library/...` 但怀疑没走镜加（关键误区）**：先分清两种可能。① 镜加是**透明代理**，日志里镜像规范名本就显示 `docker.io/library/xxx`，**不代表真直连**；判断真实是否走镜加看两点：`docker info | grep -iA3 "registry mirrors"` 是否列出你的阿里云地址，以及 `curl -sI https://<实例ID>.mirror.aliyuncs.com/v2/` 端点是否存活（200/401 均算通）。② 真没走：多半是改了 `/etc/docker/daemon.json` 后**没 `sudo systemctl restart docker` 让配置生效**，或 ECS 上配的是已停用的公共 `mirror.aliyuncs.com` / Mac 那套第三方死源 → dockerd 镜像拉取失败后**回退直连 docker.io**（ECS 上直连必超时）。修正：ECS 的 daemon.json 只留 `https://<实例ID>.mirror.aliyuncs.com`（同地域内网最快最稳），改完务必 `restart docker`。注意：阿里云镜加**只加速 docker.io(Docker Hub)**，不加速 gcr.io/quay.io/registry.k8s.io 等；你 Day1 基础镜像全是 docker.io，配好即加速。
 - **Go 跑 scratch 报 `no such file` / panic**：漏 `CGO_ENABLED=0`，重 build；需出网再确认带了 `ca-certificates.crt`。
 - **任何语言 `go mod tidy` / `npm ci` / `pip install` / `cargo build` / `mvn` / `composer` / `bundle` 报 `i/o timeout` 或 `dial tcp ...:443`**：都是默认境外源被墙。主机侧先按 §0.5 配全局国内源；Docker build 内已内置对应镜像（Go `GOPROXY` / npm `npm_config_registry` / pip `PIP_INDEX_URL` / cargo `config.toml` / Maven `settings.xml` / Composer `composer config` / Bundler `bundle config mirror`），无需额外操作。
 - **Java `target/*.jar` 匹配不到**：确认 `mvn package` 成功产出 jar。
