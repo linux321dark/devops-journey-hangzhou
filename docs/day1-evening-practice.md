@@ -109,8 +109,10 @@ EOF
 # Composer (PHP)
 composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
 # RubyGems / Bundler
-gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/
-bundle config mirror.https://rubygems.org https://gems.ruby-china.com
+# 注意：原 `gems.ruby-china.com` 2026 起证书域名不匹配(SSL hostname mismatch)，已不可靠 → 改用阿里云官方 rubygems 镜像
+gem sources --add https://mirrors.aliyun.com/rubygems/ --remove https://rubygems.org/
+bundle config mirror.https://rubygems.org https://mirrors.aliyun.com/rubygems/
+# 若 `gem sources` 报 Invalid source URI，去掉末尾 / 重试（老版本 RubyGems 已知坑）
 ```
 
 > Docker build 内镜像对照：Go `ENV GOPROXY` / npm `ENV npm_config_registry` / pip `ENV PIP_INDEX_URL` / cargo `~/.cargo/config.toml` / Maven 已写 `/root/.m2/settings.xml` / Composer `composer config` / Bundler `bundle config mirror`——均已写进各语言 Dockerfile。
@@ -445,7 +447,7 @@ FROM ruby:3.3.6-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 COPY Gemfile ./
-RUN bundle config set --global mirror.https://rubygems.org https://gems.ruby-china.com \
+RUN bundle config set --global mirror.https://rubygems.org https://mirrors.aliyun.com/rubygems/ \
  && bundle config set --local without 'development test' \
  && bundle install --jobs 4
 COPY . .
