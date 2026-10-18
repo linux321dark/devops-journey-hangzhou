@@ -19,5 +19,8 @@ ak.csv
 # ---- 构建 / 依赖缓存 ----
 node_modules/
 target/
+
+# ---- Obsidian 个人配置（非项目产出，不入库） ----
+.obsidian/
 __pycache__/
 *.class
