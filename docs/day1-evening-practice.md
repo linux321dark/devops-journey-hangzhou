@@ -122,7 +122,7 @@ bundle config mirror.https://rubygems.org https://mirrors.aliyun.com/rubygems/
 ## 0.6 版本核验：装/钉「指定版本」前，先查仓库里有没有（经验教训）
 
 > **血泪教训（写在最前）**：文档/命令里出现的**每一个具体版本号**——Docker 基础镜像、apt 包、语言二进制、依赖版本——**落地前必须先在对应仓库核验它真实存在**，不得凭记忆/拍脑袋写死。
-> 前车之鉴：① Go 误写 `1.23.4` 而你 ECS 实际是 **1.26**，主机生成的 `go.mod` 带 `go 1.26` 指令会被 1.23.x 镜像拒；② Ruby 你走 apt 装「最新不指定小版本」，而 Dockerfile 钉了 `ruby:3.3.6-slim`，主机/镜像 Ruby 不一致会让 `bundle install` 因 `RUBY VERSION` 不匹配失败。钉版本保可复现是对的，但**前提是版本真实存在且主机/镜像一致**。
+> 前车之鉴：① Go 误写 `1.23.4` 而你 ECS 实际是 **1.26**，主机生成的 `go.mod` 带 `go 1.26` 指令会被 1.23.x 镜像拒；② Ruby 你走 apt 装「最新不指定小版本」→ 实际是 **3.2.3**（Ubuntu 24.04 默认，非上游最新 3.3），原 Dockerfile 钉 `ruby:3.3.6-slim` 与主机不一致会让 `bundle install` 因 `RUBY VERSION` 不匹配失败 → **已改为 `ruby:3.2.3-slim` 对齐主机**。钉版本保可复现是对的，但**前提是版本真实存在且主机/镜像一致**。
 
 **动手前先查「这个版本在不在仓库里」——按源分类：**
 
@@ -138,7 +138,7 @@ bundle config mirror.https://rubygems.org https://mirrors.aliyun.com/rubygems/
 | **cargo crate** | `cargo search <crate>` 或 crates.io 网页 | `Cargo.toml` 写 `crate = "=1.2.3"`（前缀 `=` 钉死） |
 | **Maven 依赖** | search.maven.org 网页，或 `mvn dependency:get -Dartifact=组:件:版本` 试拉 | `pom.xml` 写 `<version>` |
 
-**Ruby 特别提示（你已装 apt 最新）**：先 `ruby -v` 查主机实际版本（Ubuntu 24.04 默认 3.2.x、22.04 默认 3.0.x，非上游最新 3.3），再把 Dockerfile 的 `ruby:3.3.6-slim` 改成与主机一致的 `ruby:<主机版本>-slim`，否则 `bundle install` 会因 `RUBY VERSION` 不匹配报错。其它语言同理：**主机侧生成 lockfile 用的版本，必须和 Docker 镜像基础版本对齐**（Go 已对齐 1.26.0）。
+**Ruby 已对齐**：你 `ruby -v` = **3.2.3**（Ubuntu 24.04 apt 默认，非上游最新 3.3），Dockerfile 已从 `ruby:3.3.6-slim` 改为 `ruby:3.2.3-slim` 与主机一致。若 `ruby:3.2.3-slim` 拉取报 `not found`，退回 `ruby:3.2-slim`（浮动次版本）即可。其它语言同理：**主机侧生成 lockfile 用的版本，必须和 Docker 镜像基础版本对齐**（Go 已对齐 1.26.0；Ruby 已对齐 3.2.3）。
 
 ---
 
@@ -443,7 +443,7 @@ cd ..
 
 ```dockerfile
 # ruby-demo/Dockerfile
-FROM ruby:3.3.6-slim AS build
+FROM ruby:3.2.3-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 COPY Gemfile ./
@@ -452,7 +452,7 @@ RUN bundle config set --global mirror.https://rubygems.org https://mirrors.aliyu
  && bundle install --jobs 4
 COPY . .
 
-FROM ruby:3.3.6-slim AS runtime
+FROM ruby:3.2.3-slim AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bundle /usr/local/bundle
@@ -588,7 +588,7 @@ done
 | Go           | 10–30MB   | scratch                       |
 | Java(Spring) | 150–200MB | eclipse-temurin:17-jre-alpine |
 | Python       | 200–400MB | python:3.12-slim              |
-| Ruby         | 200–400MB | ruby:3.3-slim                 |
+| Ruby         | 200–400MB | ruby:3.2.3-slim               |
 | PHP          | 150–250MB | php:8.3-cli-alpine            |
 | Rust         | 5–20MB    | scratch                       |
 
