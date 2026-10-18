@@ -613,22 +613,30 @@ done
 
 > push 到 ACR 走 `aliyuncs.com` 国内直连，**不需要 Clash 代理**（registry-mirrors 只管 pull）。
 
+> **⚠️ ECS 上 Docker 29.x 必读（已踩坑）**：Docker 29 默认给镜像附加 provenance（构建来源/SLSA 产物），推送时会多塞一个 `application/vnd.oci.empty.v1+json`（空 manifest），而**阿里云 ACR 个人版不认这个 manifest class**，会直接报 `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`。这不是镜像内容问题。**正解：用 `docker buildx build` 带 `--provenance=false --sbom=false` 直接构建并推送**（不要用 `docker build` + `docker push` 经典两步，那套会把空 manifest 一起推上去被拒）。
+
 ```bash
 # 1. 登录（密码=ACR 个人版「访问凭证」里设的登录密码，非阿里云登录密码）
 docker login --username=学徒321 registry.cn-hangzhou.aliyuncs.com
 
-# 2. 打 tag（以 go-demo 为例；java 同理换目录/标签）
-docker tag day1-go-demo registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
+# 2. 在 demo 目录内，用 buildx 构建 + 推送（provenance/sbom 关闭，否则 ACR 拒收）
+cd ~/devops-day1/go-demo        # 深度那门目录
+docker buildx build \
+  --provenance=false --sbom=false \
+  -t registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1 \
+  --push .
 
-# 3. 推送
-docker push registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
-
-# 4. 拉回验证（确认远端可用）
-docker rmi registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
+# 3. 拉回验证（确认远端可用）
 docker pull registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 ```
 
 > 区域按 ACR 实际地域改（杭州=`cn-hangzhou`）。命名空间/仓库名换成第 0 步建的。
+>
+> **一劳永逸（推荐）**：把 provenance 默认关掉，省得每次都带 flag。加进 `~/.bashrc`：
+> ```bash
+> echo 'export BUILDX_PROVENANCE=false' >> ~/.bashrc && source ~/.bashrc
+> ```
+> 之后 `docker buildx build ... --push` 就不会再附空 manifest。注意：经典 `docker build` + `docker push` 仍可能带该 manifest，**推 ACR 一律走上面的 buildx 形式**。
 
 ---
 
@@ -708,3 +716,4 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 - **Rust scratch 起不来**：确认用的是 `rust:*-alpine` + `musl-dev` 出静态二进制；否则改 `debian:bookworm-slim` 运行。
 - **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
 - **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
+- **push `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`**（ACR 专属）：Docker 29.x 默认给镜像附 provenance 空 manifest，ACR 个人版不认。**正解**：不要用 `docker build` + `docker push`，改用 `docker buildx build --provenance=false --sbom=false -t <镜像> --push .` 直接构建并推送；或先 `export BUILDX_PROVENANCE=false` 永久关闭。与镜加无关、与镜像内容无关。
