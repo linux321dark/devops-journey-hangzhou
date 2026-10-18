@@ -74,7 +74,7 @@ CMD ["node","dist/index.js"]
 
 ```dockerfile
 # 阶段1：编译
-FROM golang:1.26 AS build
+FROM golang:1.26.0 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -397,7 +397,7 @@ EXPOSE 80
 
 1. **多阶段**是体积优化核心（build/runtime 分离）。
 2. runtime 选**最小基础镜像**：alpine / distroless / scratch / JRE 镜像，别用完整 JDK/SDK/Ubuntu。
-3. **钉版本，不用 `latest`**：`golang:1.26`、`eclipse-temurin:17-jre-alpine`、`alpine:3.21`，可进一步钉 digest。
+3. **钉版本，不用 `latest`**：`golang:1.26.0`、`eclipse-temurin:17-jre-alpine`、`alpine:3.21`，可进一步钉 digest。
 4. **`.dockerignore`** 排除：`.git`、`node_modules`、`target`、`__pycache__`、`*.md`、本地配置、`.env`。
 5. **不装不必要包**；`apt` 后 `rm -rf /var/lib/apt/lists/*`，`apk` 后 `apk cache clean`。
 6. **非 root 运行**（`USER`），官方镜像多数已内置非 root 用户（node/www-data/nginx/mysql/rabbitmq 等）。

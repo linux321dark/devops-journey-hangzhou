@@ -51,8 +51,8 @@
 
 | 指令 | 作用 | 案例 | 关键注意 |
 | --- | --- | --- | --- |
-| `FROM` | 指定基础镜像（第一条指令） | `FROM golang:1.21-alpine AS builder` | 多阶段可多次出现，配 `AS <名>` |
-| `ARG` | 构建期变量（不写入镜像） | `ARG VER=1.21` → `FROM golang:${VER}` | 与 ENV 区别在生命周期；传版本号首选 |
+| `FROM` | 指定基础镜像（第一条指令） | `FROM golang:1.26.0-alpine AS builder` | 多阶段可多次出现，配 `AS <名>` |
+| `ARG` | 构建期变量（不写入镜像） | `ARG VER=1.26.0` → `FROM golang:${VER}` | 与 ENV 区别在生命周期；传版本号首选 |
 | `ENV` | 设置环境变量（写入镜像） | `ENV NODE_ENV=production TZ=Asia/Shanghai` | 会固化进镜像，密钥别放这 |
 | `WORKDIR` | 切换工作目录（自动建目录） | `WORKDIR /app` | 比 `RUN cd` 清晰，后续指令基于此路径 |
 | `RUN` | 构建期执行命令（装依赖/编译） | `RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*` | 用 `&&` 连命令并清缓存 |
@@ -153,7 +153,7 @@ CMD [...]
 
 **Go 范例（→ scratch，极致小）**：
 ```dockerfile
-FROM golang:1.21-alpine AS builder
+FROM golang:1.26.0-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
@@ -271,7 +271,7 @@ ENTRYPOINT ["/myapp"]
 
 1. **多阶段构建**：build/runtime 分离，核心手段
 2. **runtime 选最小基础镜像**：alpine / distroless / scratch / `*-jre-slim`，别用完整 JDK/SDK
-3. **钉版本，不用 `latest`**：`golang:1.21`、`node:20-slim`、`alpine:3.18`（可再钉 digest）
+3. **钉版本，不用 `latest`**：`golang:1.26.0`、`node:20-slim`、`alpine:3.18`（可再钉 digest）
 4. **`.dockerignore`**：排除 `.git`、`node_modules`、`target`、`*.md`、本地配置
 5. **不装多余包**；清理包缓存：`apt-get` 后 `rm -rf /var/lib/apt/lists/*`，apk 后 `apk cache clean`
 6. **非 root 运行**（`USER`）

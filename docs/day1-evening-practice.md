@@ -44,8 +44,8 @@ sudo apt-get install -y curl wget git build-essential ca-certificates \
   ruby ruby-dev bundler \
   composer
 
-# 1. Go（apt 版本过旧会卡 go 1.23 指令，改用阿里云镜像二进制；版本号以镜像站最新 1.23.x 为准）
-GO_VER=1.23.4
+# 1. Go（apt 版本过旧，改用阿里云镜像二进制；版本号以你 ECS 实际安装的 1.26.x 为准，须与下面 Dockerfile 的 golang:1.26.0 对齐）
+GO_VER=1.26.0
 wget -q https://mirrors.aliyun.com/golang/go${GO_VER}.linux-amd64.tar.gz -O /tmp/go.tgz \
   && rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tgz \
   && ln -sf /usr/local/go/bin/go /usr/local/bin/go
@@ -247,9 +247,9 @@ cd ..
 
 ```dockerfile
 # go-demo/Dockerfile
-# 注意：基础镜像必须钉死到具体补丁版本（golang:1.23 这种浮动 tag 经镜像加速常解析为 not found）。
-# 此处 1.23.4 与 §0.4 主机安装的 GO_VER 保持一致。
-FROM golang:1.23.4 AS build
+# 注意：基础镜像必须钉死到具体补丁版本（golang:1.26 这种浮动 tag 经镜像加速常解析为 not found）。
+# 此处 1.26.0 与 §0.4 主机安装的 GO_VER 保持一致（你 ECS 实际为 Go 1.26）。
+FROM golang:1.26.0 AS build
 # 国内 Go 代理（ECS 直连 proxy.golang.org 超时），保证 build 内 go mod download 可用
 ENV GOPROXY=https://mirrors.aliyun.com/goproxy/,https://goproxy.cn,direct
 ENV GOSUMDB=sum.golang.google.cn
