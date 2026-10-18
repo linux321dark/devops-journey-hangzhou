@@ -1,92 +1,232 @@
-# Day 1 晚上实践 Checklist（19:30–22:30）
+# Day 1 晚上实践 Checklist（阿里云 ECS 实例版 · 七语言全覆盖）
 
-> **前提**：本实践属于「离职求职准备」，一律在**个人设备 + 家庭宽带/热点**完成（工行工时不做本计划内容，见学习计划硬隔离原则）。
-> **目标**：写一份多阶段 Dockerfile → 优化到 `<100MB` → 推 ACR 个人版验证。
-> **语言选择**：Java / Go / Python 三选一（建议跟杭州目标岗对口；没想好就先用 Go，最易压到 10–30MB）。
+> **环境前提**：本实践在**个人付费的阿里云 ECS 实例**上完成（amd64 / Docker 29.9.1 已装 / 已配阿里云专属镜像加速器 `https://<实例ID>.mirror.aliyuncs.com` 首位）。  
+> ECS 是个人求职准备资源，**不属于工行**，符合硬隔离原则（工行工时只做本职配管答疑 + 学工行内部规范）。  
+> **目标**：七门主流语言各写一份「带真实依赖」的多阶段 Dockerfile → 全部 `docker build` 跑通 → 选 1 门做深（压体积 + 非 root + 推 ACR 验证）。  
+> **目录约定**：在 ECS 上 `mkdir -p ~/devops-day1 && cd ~/devops-day1`，下文所有 `./<语言>-demo` 均为**相对当前目录**，不绑定 Mac 路径。
 
 ---
 
-## 0. 前置确认（19:30–19:40）
+## 0. 前置确认（登录 ECS 后先做）
 
-- [ ] Docker Desktop 运行中：`docker info` 无报错
-- [ ] 镜像加速器已生效（pull 走国内，不依赖 Clash）：
-  ```bash
-  docker info | grep -A3 "Registry Mirrors"
-  ```
-  有输出（你的 `*.mirror.aliyuncs.com` 等）= 已配；空 = 去 Docker Desktop → Settings → Docker Engine 粘入学习计划 §6 的 `registry-mirrors` JSON → Apply
+```bash
+# 1. SSH 进 ECS（Mac 本地执行）
+ssh root@<你的ECS公网IP>
+
+# 2. 容器内引擎正常
+docker info | grep -i "server version"      # 应显示 29.9.1
+docker info | grep -A2 "Registry Mirrors"   # 应看到你的 *.mirror.aliyuncs.com（阿里云专属首位）
+
+# 3. 当前目录约定
+mkdir -p ~/devops-day1 && cd ~/devops-day1
+pwd        # 记住这个目录，下文全相对它
+```
+
+- [ ] ECS 可 SSH 登录
+- [ ] `docker info` 无报错，镜像加速器为阿里云专属地址（内网最快，见学习计划 §6 / 坑16）
 - [ ] ACR 个人版仓库已建：登录 `https://cr.console.aliyun.com` → 个人版 → 命名空间（如 `devops-journey`）→ 仓库（如 `day1-demo`）
-- [ ] 选定语言：□ Java  □ Go  □ Python
+- [ ] 已 `cd` 到工作目录（本文约定 `~/devops-day1`）
 
 ---
 
-## 1. 建项目骨架（19:40–20:00）
+## 1. 通用 `.dockerignore`（七语言共用，每个 demo 目录放一份）
 
-任选一门，在 `~/Documents/devops-journey-hangzhou/week1/day1/` 下建子目录：
-
-**Go**（`go-demo/`）：
 ```bash
-mkdir -p ~/Documents/devops-journey-hangzhou/week1/day1/go-demo && cd "$_"
-cat > main.go <<'EOF'
-package main
-import "fmt"
-func main() { fmt.Println("Hello DevOps Journey Day1") }
-EOF
-cat > go.mod <<'EOF'
-module go-demo
-go 1.26
-EOF
-```
-
-**Java（Spring Boot 最小可跑）**（`java-demo/`）：用 `spring initializr` 或手建 `pom.xml` + `src/main/java/com/example/App.java`（仅需一个打印端口的 Web 起步依赖，或直接用纯 `main()` + `maven-compiler-plugin` 跑通即可，重点是验证多阶段，不必真做业务）。
-
-**Python**（`py-demo/`）：
-```bash
-mkdir -p ~/Documents/devops-journey-hangzhou/week1/day1/py-demo && cd "$_"
-cat > main.py <<'EOF'
-print("Hello DevOps Journey Day1")
-EOF
-cat > requirements.txt <<'EOF'
-# 留空或放一两个纯 python 依赖，便于演示依赖安装层
-EOF
-```
-
----
-
-## 2. 写多阶段 Dockerfile（20:00–21:00）
-
-每个语言各给一份**已验证结构**，直接抄。配 `.dockerignore`。
-
-### 2.1 `.dockerignore`（三种语言通用）
-```
+cat > .dockerignore <<'EOF'
 .git
-target
 node_modules
+target
+dist
 __pycache__
 *.md
 Dockerfile
 .dockerignore
+vendor
+EOF
+```
+> 每个 `./<语言>-demo` 目录里都放同一份 `.dockerignore`，避免把本地依赖/缓存打进构建上下文。
+
+---
+
+## 2. 七语言全覆盖（真实依赖 · 多阶段）
+
+> 顺序建议：先 Go（最易压到 scratch，10–30MB，成就感强）→ 再 Java（杭州岗位对口）→ 其余按需。  
+> 每门语言给「源码（真实依赖）→ Dockerfile → 构建验证」三件套，直接抄。
+
+### 2.1 Node.js（TypeScript + Express，真实 Web 框架）
+
+```bash
+mkdir -p node-demo/src && cd node-demo
+cat > package.json <<'EOF'
+{
+  "name": "node-demo",
+  "version": "1.0.0",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2"
+  }
+}
+EOF
+cat > tsconfig.json <<'EOF'
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "commonjs",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true
+  },
+  "include": ["src"]
+}
+EOF
+cat > src/server.ts <<'EOF'
+import express from 'express';
+const app = express();
+app.get('/', (_req, res) => res.json({ msg: 'DevOps Journey Day1 - Node', framework: 'express' }));
+const port = 3000;
+app.listen(port, () => console.log(`Node demo listening on :${port}`));
+EOF
+cp ../.dockerignore .
+# 生成本地 lockfile（构建阶段用 npm ci 保证可复现）
+npm install
+cd ..
 ```
 
-### 2.2 Go（→ scratch，约 10–30MB）
 ```dockerfile
-# 阶段1：构建
-FROM golang:1.26 AS build
+# node-demo/Dockerfile
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src ./src
+RUN npm run build
+
+FROM node:22-alpine AS runtime
+WORKDIR /app
+ENV NODE_ENV=production
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+COPY --from=build /app/dist ./dist
+USER node
+EXPOSE 3000
+CMD ["node","dist/server.js"]
+```
+
+---
+
+### 2.2 Go（Gin 框架，真实 Web 依赖）
+
+```bash
+mkdir -p go-demo && cd go-demo
+cat > main.go <<'EOF'
+package main
+
+import (
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+	r.GET("/", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"msg": "DevOps Journey Day1 - Go", "framework": "gin"})
+	})
+	r.Run(":8080")
+}
+EOF
+# 初始化模块并拉真实依赖（在 ECS 上联网生成 go.mod/go.sum）
+go mod init go-demo
+go get github.com/gin-gonic/gin@v1.10.0
+go mod tidy
+cp ../.dockerignore .
+cd ..
+```
+
+```dockerfile
+# go-demo/Dockerfile
+FROM golang:1.23 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /bin/app ./main.go
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/app .
 
-# 阶段2：运行（scratch 无 shell/包管理器，攻击面最小）
 FROM scratch
 COPY --from=build /bin/app /bin/app
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/   # gin 需 HTTPS/TLS 时带 CA
 USER 65532:65532
+EXPOSE 8080
 CMD ["/bin/app"]
 ```
 
-### 2.3 Java / Spring Boot（Maven + JRE，约 80–120MB）
+---
+
+### 2.3 Java（Spring Boot，真实 Web 起步依赖）
+
+```bash
+mkdir -p java-demo/src/main/java/com/example && cd java-demo
+cat > pom.xml <<'EOF'
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>com.example</groupId>
+  <artifactId>java-demo</artifactId>
+  <version>1.0.0</version>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>3.4.1</version>
+  </parent>
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+    </plugins>
+  </build>
+</project>
+EOF
+cat > src/main/java/com/example/JavaDemoApplication.java <<'EOF'
+package com.example;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@SpringBootApplication
+@RestController
+public class JavaDemoApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(JavaDemoApplication.class, args);
+    }
+    @GetMapping("/")
+    public String hello() {
+        return "DevOps Journey Day1 - Java (Spring Boot real dep)";
+    }
+}
+EOF
+cp ../.dockerignore .
+cd ..
+```
+
 ```dockerfile
-# 阶段1：用 Maven 构建
+# java-demo/Dockerfile
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /app
 COPY pom.xml .
@@ -94,121 +234,338 @@ RUN mvn dependency:go-offline -q
 COPY src ./src
 RUN mvn package -DskipTests -q
 
-# 阶段2：运行（只带 JRE，不带 JDK/构建工具）
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-alpine AS runtime
 WORKDIR /app
 COPY --from=builder /app/target/*.jar app.jar
 USER 1000
 EXPOSE 8080
-ENTRYPOINT ["java","-jar","app.jar"]
+ENTRYPOINT ["java","-jar","/app/app.jar"]
 ```
 
-### 2.4 Python（slim 运行，约 40–90MB；进阶可改 distroless）
+---
+
+### 2.4 Python（FastAPI + Uvicorn，真实 ASGI 依赖）
+
+```bash
+mkdir -p py-demo && cd py-demo
+cat > requirements.txt <<'EOF'
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+EOF
+cat > main.py <<'EOF'
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.get("/")
+def root():
+    return {"msg": "DevOps Journey Day1 - Python", "framework": "fastapi"}
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+EOF
+cp ../.dockerignore .
+cd ..
+```
+
 ```dockerfile
-# 阶段1：装依赖
-FROM python:3.12-slim AS builder
+# py-demo/Dockerfile
+FROM python:3.12-slim AS build
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 COPY . .
 
-# 阶段2：运行
-FROM python:3.12-slim
-COPY --from=builder /install /usr/local
-COPY --from=builder /app /app
+FROM python:3.12-slim AS runtime
 WORKDIR /app
+COPY --from=build /install /usr/local
+COPY --from=build /app /app
 RUN useradd -m appuser && chown -R appuser:appuser /app
 USER appuser
-CMD ["python","main.py"]
+EXPOSE 8000
+CMD ["uvicorn","main:app","--host","0.0.0.0","--port","8000"]
 ```
 
-> 进阶（体积更小/更安全）：Python 可改 `FROM gcr.io/distroless/python3-debian12` + `USER nonroot`，但需注意 distroless 无 shell、`python` 路径与 `CMD` 写法差异，初学者先跑通 slim 版。
-
 ---
 
-## 3. 构建 + 量体积（21:00–21:30）
+### 2.5 Ruby（Sinatra + Puma，真实 Web 框架）
 
 ```bash
-cd ~/Documents/devops-journey-hangzhou/week1/day1/<语言>-demo
-docker build -t day1-demo:multistage .
-
-# 看最终体积
-docker images day1-demo
-
-# 看每层构成（找胖层）
-docker history day1-demo:multistage
+mkdir -p ruby-demo && cd ruby-demo
+cat > Gemfile <<'EOF'
+source "https://rubygems.org"
+gem "sinatra", "~> 4.1"
+gem "puma", "~> 6.5"
+EOF
+cat > app.rb <<'EOF'
+require "sinatra"
+require "json"
+set :bind, "0.0.0.0"
+set :port, 4567
+get "/" do
+  content_type :json
+  { msg: "DevOps Journey Day1 - Ruby", framework: "sinatra" }.to_json
+end
+EOF
+cp ../.dockerignore .
+cd ..
 ```
 
-**对照目标**：Go <30MB、Java 80–120MB、Python 40–90MB。未达到就进第 4 步优化。
+```dockerfile
+# ruby-demo/Dockerfile
+FROM ruby:3.3-slim AS build
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
+COPY Gemfile ./
+RUN bundle config set --local without 'development test' && bundle install --jobs 4
+COPY . .
+
+FROM ruby:3.3-slim AS runtime
+WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
+COPY --from=build /usr/local/bundle /usr/local/bundle
+COPY --from=build /app /app
+USER 1000
+EXPOSE 4567
+CMD ["ruby","app.rb"]
+```
 
 ---
 
-## 4. 优化到目标体积（21:30–22:00）
-
-按顺序排查，改完重 build 对比：
-
-- [ ] **基础镜像钉版本且最小**：`alpine` / `slim` / `jre-alpine` / `scratch`，不用 `latest`、不用完整 `ubuntu`/`jdk`
-- [ ] **多阶段**：build 工具链（maven/golang/python 编译期）只在第一阶段，最终镜像不残留
-- [ ] **依赖安装与代码复制分层**：先 `COPY pom.xml`/`go.mod` 再装依赖，利用缓存且让源码变更不拖累依赖层
-- [ ] **清理包缓存**：`apt-get` 后 `rm -rf /var/lib/apt/lists/*`；apk 后 `apk cache clean`；pip 用 `--no-cache-dir`
-- [ ] **`.dockerignore` 生效**：构建上下文不含 `.git`/`target`/`node_modules`
-- [ ] **非 root**：`USER` 已设
-- [ ] **Go 静态编译**：`CGO_ENABLED=0` + `-ldflags="-s -w"`（否则跑不了 scratch）
-- [ ] **确认只有最后一个 FROM 进入最终镜像**（多阶段默认行为）
-
----
-
-## 5. 推 ACR 个人版（22:00–22:20）
-
-> push 到 ACR 走 `aliyuncs.com` 国内直连，**不需要 Clash 代理**（registry-mirrors 只管 pull，不管 push）。
+### 2.6 PHP（Slim 框架，真实微服务依赖，内置服务器运行）
 
 ```bash
-# 1. 登录（用户名=阿里云账号，密码=ACR 个人版「访问凭证」里设的登录密码，非账号登录密码）
+mkdir -p php-demo/public && cd php-demo
+cat > composer.json <<'EOF'
+{
+  "require": {
+    "slim/slim": "^4.14",
+    "slim/psr7": "^1.7"
+  }
+}
+EOF
+cat > public/index.php <<'EOF'
+<?php
+require __DIR__ . '/../vendor/autoload.php';
+use Slim\Factory\AppFactory;
+$app = AppFactory::create();
+$app->get('/', function ($req, $res) {
+    $res->getBody()->write(json_encode([
+        "msg" => "DevOps Journey Day1 - PHP",
+        "framework" => "slim"
+    ]));
+    return $res->withHeader('Content-Type', 'application/json');
+});
+$app->run();
+EOF
+cp ../.dockerignore .
+cd ..
+```
+
+```dockerfile
+# php-demo/Dockerfile
+FROM composer:2 AS build
+WORKDIR /app
+COPY composer.json ./
+RUN composer install --no-dev --no-scripts --optimize-autoloader
+COPY . .
+
+FROM php:8.3-cli-alpine AS runtime
+WORKDIR /app
+COPY --from=build /app /app
+USER www-data
+EXPOSE 8080
+CMD ["php","-S","0.0.0.0:8080","-t","public"]
+```
+
+---
+
+### 2.7 Rust（Actix-web，真实异步 Web 框架）
+
+```bash
+mkdir -p rust-demo/src && cd rust-demo
+cat > Cargo.toml <<'EOF'
+[package]
+name = "rust-demo"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4.9.0"
+serde_json = "1.0"
+EOF
+cat > src/main.rs <<'EOF'
+use actix_web::{get, App, HttpServer, Responder};
+
+#[get("/")]
+async fn index() -> impl Responder {
+    actix_web::HttpResponse::Ok().json(serde_json::json!({
+        "msg": "DevOps Journey Day1 - Rust",
+        "framework": "actix-web"
+    }))
+}
+
+#[actix_web::main]
+async fn main() -> std::io::Result<()> {
+    HttpServer::new(|| App::new().service(index))
+        .bind(("0.0.0.0", 8080))?
+        .run()
+        .await
+}
+EOF
+cp ../.dockerignore .
+cd ..
+```
+
+```dockerfile
+# rust-demo/Dockerfile
+FROM rust:1.83-alpine AS build
+WORKDIR /app
+RUN apk add --no-cache musl-dev
+COPY . .
+RUN cargo build --release
+
+FROM scratch
+COPY --from=build /app/target/release/rust-demo /app
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+USER 65532:65532
+EXPOSE 8080
+CMD ["/app"]
+```
+
+---
+
+## 3. 全部构建 + 量体积（跑通七门）
+
+```bash
+cd ~/devops-day1
+for d in node-demo go-demo java-demo py-demo ruby-demo php-demo rust-demo; do
+  echo "===== build $d ====="
+  docker build -t day1-$d ./$d && docker images day1-$d --format "{{.Size}}  $d"
+done
+```
+
+**达标线（七门全 `docker build` 成功即覆盖完成）**：
+
+| 技术栈 | 多阶段目标体积 | runtime 基础镜像 |
+| --- | --- | --- |
+| Node | 150–250MB | node:22-alpine |
+| Go | 10–30MB | scratch |
+| Java(Spring) | 150–200MB | eclipse-temurin:17-jre-alpine |
+| Python | 200–400MB | python:3.12-slim |
+| Ruby | 200–400MB | ruby:3.3-slim |
+| PHP | 150–250MB | php:8.3-cli-alpine |
+| Rust | 5–20MB | scratch |
+
+> 七门全绿 = 覆盖达成。任意一门失败先查第 0 步镜加是否生效 + 卡点自救。
+
+---
+
+## 4. 深度优化示范（选 1 门做透：Go 或 Java）
+
+挑 **Go**（最易压到 scratch）或 **Java**（杭州对口）做完整优化，作为面试可讲的「标杆产出」：
+
+- [ ] 基础镜像钉版本且最小（alpine / slim / jre-alpine / scratch，不用 latest / 完整 ubuntu / 完整 JDK）
+- [ ] 多阶段：build 工具链只在第一阶段，最终镜像无编译器（`docker history` 或 `docker run --rm <镜像> which go/mvn` 应为空）
+- [ ] 依赖安装与代码复制分层（先 `COPY go.mod`/`pom.xml` 再拉依赖，利用缓存）
+- [ ] 清包缓存：`apt` 后 `rm -rf /var/lib/apt/lists/*`；`apk cache clean`；`pip --no-cache-dir`
+- [ ] `.dockerignore` 生效（上下文不含 `.git`/`node_modules`/`target`）
+- [ ] 非 root：`USER` 已设（`docker run --rm <镜像> id -u` 返回非 0）
+- [ ] Go 静态编译 `CGO_ENABLED=0` + `-ldflags="-s -w"`（否则 scratch 跑不了）
+
+---
+
+## 5. 推 ACR 个人版（深度那门先推，验证远端可用）
+
+> push 到 ACR 走 `aliyuncs.com` 国内直连，**不需要 Clash 代理**（registry-mirrors 只管 pull）。
+
+```bash
+# 1. 登录（密码=ACR 个人版「访问凭证」里设的登录密码，非阿里云登录密码）
 docker login --username=<你的阿里云账号> registry.cn-hangzhou.aliyuncs.com
 
-# 2. 打 tag（格式：registry.cn-<区域>.aliyuncs.com/<命名空间>/<仓库>:<标签>）
-docker tag day1-demo:multistage registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
+# 2. 打 tag（以 go-demo 为例；java 同理换目录/标签）
+docker tag day1-go-demo registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 
 # 3. 推送
 docker push registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 
-# 4. 验证：从 ACR 拉回（可选，确认远端可用）
+# 4. 拉回验证（确认远端可用）
 docker rmi registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 docker pull registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 ```
 
-> 区域按你 ACR 实际地域改（杭州=`cn-hangzhou`）。命名空间/仓库名换成你第 0 步建的。
+> 区域按 ACR 实际地域改（杭州=`cn-hangzhou`）。命名空间/仓库名换成第 0 步建的。
 
 ---
 
-## 6. 沉淀到 Git（22:20–22:30）
+## 6. 扩展：基础设施多阶段（选做，补全「全栈」）
+
+> 中间件通常不从零编译，多阶段用于「烘焙配置 / 预装插件 / 源码定制」。完整版见 `docker-multistage-allstacks.md` §8。两例速通：
+
+**6.1 Nginx 静态前端（Node 构建 → Nginx 托管，约 50MB）**
+```dockerfile
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY package*.json ./ && RUN npm ci
+COPY . . && RUN npm run build
+FROM nginx:1.27-alpine AS runtime
+COPY --from=build /app/dist /usr/share/nginx/html
+EXPOSE 80
+```
+**6.2 Redis 自编译裁剪（debian:bookworm-slim，约 40–60MB）**
+```dockerfile
+FROM debian:bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN wget -q https://download.redis.io/releases/redis-7.4.1.tar.gz && tar xzf redis-7.4.1.tar.gz && cd redis-7.4.1 && make BUILD_TLS=yes
+FROM debian:bookworm-slim AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY --from=build /redis-7.4.1/src/redis-server /usr/local/bin/
+COPY --from=build /redis-7.4.1/src/redis-cli /usr/local/bin/
+USER 1000
+EXPOSE 6379
+CMD ["redis-server"]
+```
+> MySQL / Kafka / RocketMQ / RabbitMQ 多阶段多为「官方镜像 + 烘焙配置/插件」，详见手册 §8，不在本晚强制范围。
+
+---
+
+## 7. 沉淀到 Git
+
+> ECS 上产出可直接在仓库目录操作：把 `~/devops-day1/*` 拷进本地克隆的 `devops-journey-hangzhou` 仓库（或 ECS 上也 clone 一份用 PAT 提交），再 push。
 
 ```bash
-cd ~/Documents/devops-journey-hangzhou
-git add week1/day1/<语言>-demo/ docs/day1-evening-practice.md
-git commit -m "day1: 多阶段 Dockerfile 实践（<语言>）+ 推 ACR 验证"
+# 在仓库根（Mac 本地或 ECS 已 clone）
+mkdir -p week1/day1
+cp -r ~/devops-day1/* week1/day1/
+git add week1/day1/ docs/day1-evening-practice.md
+git commit -m "day1: 七语言多阶段 Dockerfile 实践（真实依赖）+ 推 ACR 验证"
 git push -u origin main   # 密码填 jihulab Personal Access Token
 ```
 
-> 把 Dockerfile + 构建体积记录（截图 `docker images`/`history`）一并提交，是 Day 1 的产出物，面试可讲。
+> Dockerfile + 构建体积记录（`docker images` 截图 / 表格）一并提交，是 Day 1 核心产出，面试可讲。
 
 ---
 
 ## 验收标准（全满足 = Day 1 达标）
 
-1. 多阶段 Dockerfile 写通，`docker build` 成功
-2. 最终镜像体积达到速查表目标（Go<30MB / Java 80–120MB / Python 40–90MB）
-3. 镜像内**不含**编译器/构建工具（用 `docker history` 或 `docker run --rm <镜像> which mvn/gc` 验证为空）
-4. 以**非 root** 用户运行（`docker run --rm <镜像> id -u` 返回非 0）
-5. 成功推到 ACR 个人版并拉回验证
-6. 产出物已提交 Git（本地 + push jihulab）
+1. 七门语言（Node/Go/Java/Python/Ruby/PHP/Rust）Dockerfile **全部 `docker build` 成功**
+2. 每门都**带真实依赖**（express/gin/spring-boot/fastapi/sinatra/slim/actix-web），非 hello world
+3. 深度那门：最终镜像体积达到上表目标、**不含**编译器/构建工具、以**非 root** 运行
+4. 深度那门成功推到 ACR 个人版并拉回验证
+5. 产出物已提交 Git（本地 + push jihulab）
 
 ---
 
 ## 卡点自救
 
-- **pull 超时**：确认第 0 步 `Registry Mirrors` 已配；仍慢就临时开 Clash TUN 或手动 `export https_proxy=http://127.0.0.1:7897` 后 build/pull。
-- **Go 跑 scratch 报 `no such file`**：漏了 `CGO_ENABLED=0`，重新 build。
-- **Java `target/*.jar` 匹配不到**：确认 `mvn package` 成功产出 jar，且 `COPY --from=builder /app/target/*.jar`。
-- **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；在 ACR 控制台「访问凭证」重置。
-- **push 报 `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先去控制台核对。
+- **pull 超时 / 基础镜像拉不到**：确认第 0 步 `Registry Mirrors` 首位为阿里云专属 `https://<实例ID>.mirror.aliyuncs.com`；极新 tag（如刚发的基础镜像）专属加速器可能未同步，临时 `export https_proxy=http://127.0.0.1:7897` 或改稍旧已缓存 tag。
+- **Go 跑 scratch 报 `no such file` / panic**：漏 `CGO_ENABLED=0`，重 build；需出网再确认带了 `ca-certificates.crt`。
+- **Java `target/*.jar` 匹配不到**：确认 `mvn package` 成功产出 jar。
+- **Python `pip install` 报编译错**：`build` 阶段已装 `gcc`，缺 `-dev` 包（如 `libpq-dev`）按需补。
+- **Ruby bundle 报权限/编译错**：build 阶段装 `build-essential`；runtime 只装运行时库 `libpq5`。
+- **PHP Slim 报类找不到**：确认 `composer install` 生成了 `vendor/autoload.php` 且被 `index.php` require。
+- **Rust scratch 起不来**：确认用的是 `rust:*-alpine` + `musl-dev` 出静态二进制；否则改 `debian:bookworm-slim` 运行。
+- **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
+- **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
