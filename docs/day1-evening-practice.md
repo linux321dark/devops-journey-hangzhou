@@ -286,7 +286,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /bin/app .
 
 FROM scratch
 COPY --from=build /bin/app /bin/app
-COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/   # gin 需 HTTPS/TLS 时带 CA
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 USER 65532:65532
 EXPOSE 8080
 CMD ["/bin/app"]
@@ -552,7 +552,9 @@ cd ..
 
 ```dockerfile
 # rust-demo/Dockerfile
-FROM rust:1.83.0-alpine AS build
+# 注意：基础镜像必须 >= 1.85.0——Cargo 1.83 不支持 edition2024，而 actix-web 依赖树里的
+# 传递依赖 cpufeatures 等已用 edition2024，1.83 解析其 Cargo.toml 会直接失败（feature `edition2024` is required）。
+FROM rust:1.87.0-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache musl-dev \
  && mkdir -p /usr/local/cargo \
@@ -721,3 +723,4 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 - **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
 - **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
 - **push `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`**（ACR 专属）：Docker 29.x 默认给镜像附 provenance 空 manifest，ACR 个人版不认。**正解**：不要用 `docker build` + `docker push`，改用 `docker buildx build --provenance=false --sbom=false -t <镜像> --push .` 直接构建并推送；或先 `export BUILDX_PROVENANCE=false` 永久关闭。与镜加无关、与镜像内容无关。
+- **Rust `cargo build` 报 `feature edition2024 is required ... not stabilized in this version of Cargo (1.83.0)`**：基础镜像 `rust:1.83.0-alpine` 太旧，`edition2024` 在 Rust 1.85.0 才进 stable，而 `actix-web` 依赖树传递进来的 `cpufeatures` 等已用该 edition，旧 Cargo 解析其 `Cargo.toml` 直接失败。**正解**：把基础镜像升到 `rust:1.87.0-alpine`（≥1.85.0）。与镜像源/网络无关，纯粹升工具链版本。
