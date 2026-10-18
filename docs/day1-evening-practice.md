@@ -117,6 +117,29 @@ bundle config mirror.https://rubygems.org https://gems.ruby-china.com
 
 ---
 
+## 0.6 版本核验：装/钉「指定版本」前，先查仓库里有没有（经验教训）
+
+> **血泪教训（写在最前）**：文档/命令里出现的**每一个具体版本号**——Docker 基础镜像、apt 包、语言二进制、依赖版本——**落地前必须先在对应仓库核验它真实存在**，不得凭记忆/拍脑袋写死。
+> 前车之鉴：① Go 误写 `1.23.4` 而你 ECS 实际是 **1.26**，主机生成的 `go.mod` 带 `go 1.26` 指令会被 1.23.x 镜像拒；② Ruby 你走 apt 装「最新不指定小版本」，而 Dockerfile 钉了 `ruby:3.3.6-slim`，主机/镜像 Ruby 不一致会让 `bundle install` 因 `RUBY VERSION` 不匹配失败。钉版本保可复现是对的，但**前提是版本真实存在且主机/镜像一致**。
+
+**动手前先查「这个版本在不在仓库里」——按源分类：**
+
+| 来源 | 查版本是否存在的命令 | 装指定版的写法 |
+| --- | --- | --- |
+| **Docker 基础镜像**（Docker Hub / 阿里云镜加） | 最稳：`docker pull <img>:<tag>`（不存在立刻 `not found`，你已踩）；不真下载可用 `skopeo ls` / `crane ls`，或查 Docker Hub API：`curl -s "https://hub.docker.com/v2/repositories/library/<img>/tags?name=<版本>&page_size=20"`（Mac/有网处） | `FROM <img>:<tag>`（必须钉具体补丁，禁浮动 `major.minor`） |
+| **apt 系统包**（Ubuntu/Debian） | `apt-cache policy <包>` 或 `apt list -a <包>`（列出仓库全部可用版本） | `apt-get install -y <包>=<版本>`；⚠️ apt 的 Go/Node/Ruby 通常是旧版，**Go/Node 别用 apt**（§0.4 已改镜像二进制），Ruby 若用 apt 须接受「发行版默认版」 |
+| **阿里云 Go 镜像二进制** | `curl -sI https://mirrors.aliyun.com/golang/go<VER>.linux-amd64.tar.gz`（200=有，404=没有） | `GO_VER=<VER>`（§0.4） |
+| **npmmirror Node 二进制** | `curl -sI https://cdn.npmmirror.com/binaries/node/v<VER>/node-v<VER>-linux-x64.tar.gz` | `NODE_VER=<VER>`（§0.4） |
+| **npm 包** | `npm view <包> versions --json` 或 `npm view <包>@<ver>`（不存在报错） | `npm install <包>@<ver>` |
+| **pip 包** | `pip index versions <包>`（或 `pip install <包>==` 报错会列出可用版本） | `pip install <包>==<ver>` / `requirements.txt` 写 `包==<ver>` |
+| **gem / Bundler** | `gem list -r <gem>` 或 `gem search -r <gem>`（列远端版本） | `gem install <gem> -v <ver>`；`Gemfile` 写 `gem '<gem>', '<ver>'` |
+| **cargo crate** | `cargo search <crate>` 或 crates.io 网页 | `Cargo.toml` 写 `crate = "=1.2.3"`（前缀 `=` 钉死） |
+| **Maven 依赖** | search.maven.org 网页，或 `mvn dependency:get -Dartifact=组:件:版本` 试拉 | `pom.xml` 写 `<version>` |
+
+**Ruby 特别提示（你已装 apt 最新）**：先 `ruby -v` 查主机实际版本（Ubuntu 24.04 默认 3.2.x、22.04 默认 3.0.x，非上游最新 3.3），再把 Dockerfile 的 `ruby:3.3.6-slim` 改成与主机一致的 `ruby:<主机版本>-slim`，否则 `bundle install` 会因 `RUBY VERSION` 不匹配报错。其它语言同理：**主机侧生成 lockfile 用的版本，必须和 Docker 镜像基础版本对齐**（Go 已对齐 1.26.0）。
+
+---
+
 ## 1. 通用 `.dockerignore`（七语言共用，每个 demo 目录放一份）
 
 ```bash
