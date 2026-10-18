@@ -22,10 +22,63 @@ mkdir -p ~/devops-day1 && cd ~/devops-day1
 pwd        # 记住这个目录，下文全相对它
 ```
 
-- [ ] ECS 可 SSH 登录
-- [ ] `docker info` 无报错，镜像加速器为阿里云专属地址（内网最快，见学习计划 §6 / 坑16）
+- [x] ECS 可 SSH 登录
+- [x] `docker info` 无报错，镜像加速器为阿里云专属地址（内网最快，见学习计划 §6 / 坑16）
 - [ ] ACR 个人版仓库已建：登录 `https://cr.console.aliyun.com` → 个人版 → 命名空间（如 `devops-journey`）→ 仓库（如 `day1-demo`）
-- [ ] 已 `cd` 到工作目录（本文约定 `~/devops-day1`）
+- [x] 已 `cd` 到工作目录（本文约定 `~/devops-day1`）
+- [ ] 已按 §0.5 配好国内包管理器镜像源（否则拉依赖超时）
+
+---
+
+## 0.5 国内包管理器镜像源（ECS 必配，否则拉依赖超时）
+
+> ⚠️ 阿里云镜像加速器只加速 **Docker 镜像 pull**，**不加速**语言级包下载（npm/pip/cargo/maven 等各有独立源）。ECS 直连 `proxy.golang.org` / `registry.npmjs.org` / `pypi.org` / `crates.io` / `repo1.maven.org` / `rubygems.org` / `packagist.org` 都会超时——你已踩到 Go 这个。
+> 一次性在 ECS 主机全局配好下列源，主机侧 `go mod tidy` / `npm install` 即通；各语言 **Dockerfile 构建阶段也已内置对应镜像**，build 内 `go mod download` / `npm ci` / `pip install` / `cargo build` / `mvn` / `composer` / `bundle` 同样走国内源，无需你再手动加。
+
+**主机一次性全局配置（复制执行一次）：**
+
+```bash
+# Go
+go env -w GOPROXY=https://mirrors.aliyun.com/goproxy/,https://goproxy.cn,direct
+go env -w GOSUMDB=sum.golang.google.cn
+# npm
+npm config set registry https://registry.npmmirror.com
+# pip
+pip config set global.index-url https://mirrors.aliyun.com/pypi/simple/
+# cargo (Rust)
+mkdir -p ~/.cargo
+cat > ~/.cargo/config.toml <<'EOF'
+[source.crates-io]
+replace-with = 'rsproxy-sparse'
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+[registries.rsproxy]
+index = "https://rsproxy.cn/crates.io-index"
+[net]
+git-fetch-with-cli = true
+EOF
+# Maven (Java)
+mkdir -p ~/.m2
+cat > ~/.m2/settings.xml <<'EOF'
+<settings>
+  <mirrors>
+    <mirror>
+      <id>aliyun</id>
+      <mirrorOf>central</mirrorOf>
+      <name>aliyun maven</name>
+      <url>https://maven.aliyun.com/repository/public</url>
+    </mirror>
+  </mirrors>
+</settings>
+EOF
+# Composer (PHP)
+composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
+# RubyGems / Bundler
+gem sources --add https://gems.ruby-china.com/ --remove https://rubygems.org/
+bundle config mirror.https://rubygems.org https://gems.ruby-china.com
+```
+
+> Docker build 内镜像对照：Go `ENV GOPROXY` / npm `ENV npm_config_registry` / pip `ENV PIP_INDEX_URL` / cargo `~/.cargo/config.toml` / Maven 已写 `/root/.m2/settings.xml` / Composer `composer config` / Bundler `bundle config mirror`——均已写进各语言 Dockerfile。
 
 ---
 
@@ -44,6 +97,7 @@ Dockerfile
 vendor
 EOF
 ```
+
 > 每个 `./<语言>-demo` 目录里都放同一份 `.dockerignore`，避免把本地依赖/缓存打进构建上下文。
 
 ---
@@ -56,6 +110,7 @@ EOF
 ### 2.1 Node.js（TypeScript + Express，真实 Web 框架）
 
 ```bash
+apt install npm
 mkdir -p node-demo/src && cd node-demo
 cat > package.json <<'EOF'
 {
@@ -103,6 +158,7 @@ cd ..
 ```dockerfile
 # node-demo/Dockerfile
 FROM node:22-alpine AS build
+ENV npm_config_registry=https://registry.npmmirror.com
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -126,6 +182,8 @@ CMD ["node","dist/server.js"]
 ### 2.2 Go（Gin 框架，真实 Web 依赖）
 
 ```bash
+apt install golang-go
+apt install gccgo-go
 mkdir -p go-demo && cd go-demo
 cat > main.go <<'EOF'
 package main
@@ -144,7 +202,7 @@ func main() {
 	r.Run(":8080")
 }
 EOF
-# 初始化模块并拉真实依赖（在 ECS 上联网生成 go.mod/go.sum）
+# 初始化模块并拉真实依赖（在 ECS 上联网生成 go.mod/go.sum；Go 代理已按 §0.5 全局配好）
 go mod init go-demo
 go get github.com/gin-gonic/gin@v1.10.0
 go mod tidy
@@ -155,6 +213,9 @@ cd ..
 ```dockerfile
 # go-demo/Dockerfile
 FROM golang:1.23 AS build
+# 国内 Go 代理（ECS 直连 proxy.golang.org 超时），保证 build 内 go mod download 可用
+ENV GOPROXY=https://mirrors.aliyun.com/goproxy/,https://goproxy.cn,direct
+ENV GOSUMDB=sum.golang.google.cn
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -229,6 +290,10 @@ cd ..
 # java-demo/Dockerfile
 FROM maven:3.9-eclipse-temurin-17 AS builder
 WORKDIR /app
+# 阿里云 Maven 镜像（直连 repo1.maven.org 超时）
+RUN mkdir -p /root/.m2 && printf '%s' \
+  '<settings><mirrors><mirror><id>aliyun</id><mirrorOf>central</mirrorOf><name>aliyun maven</name><url>https://maven.aliyun.com/repository/public</url></mirror></mirrors></settings>' \
+  > /root/.m2/settings.xml
 COPY pom.xml .
 RUN mvn dependency:go-offline -q
 COPY src ./src
@@ -272,6 +337,7 @@ cd ..
 ```dockerfile
 # py-demo/Dockerfile
 FROM python:3.12-slim AS build
+ENV PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple/
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt .
@@ -319,7 +385,9 @@ FROM ruby:3.3-slim AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 COPY Gemfile ./
-RUN bundle config set --local without 'development test' && bundle install --jobs 4
+RUN bundle config set --global mirror.https://rubygems.org https://gems.ruby-china.com \
+ && bundle config set --local without 'development test' \
+ && bundle install --jobs 4
 COPY . .
 
 FROM ruby:3.3-slim AS runtime
@@ -368,6 +436,7 @@ cd ..
 # php-demo/Dockerfile
 FROM composer:2 AS build
 WORKDIR /app
+RUN composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
 COPY composer.json ./
 RUN composer install --no-dev --no-scripts --optimize-autoloader
 COPY . .
@@ -423,7 +492,9 @@ cd ..
 # rust-demo/Dockerfile
 FROM rust:1.83-alpine AS build
 WORKDIR /app
-RUN apk add --no-cache musl-dev
+RUN apk add --no-cache musl-dev \
+ && mkdir -p /usr/local/cargo \
+ && printf '%s\n' '[source.crates-io]' 'replace-with = "rsproxy-sparse"' '[source.rsproxy-sparse]' 'registry = "sparse+https://rsproxy.cn/index/"' '[net]' 'git-fetch-with-cli = true' > /usr/local/cargo/config.toml
 COPY . .
 RUN cargo build --release
 
@@ -449,15 +520,15 @@ done
 
 **达标线（七门全 `docker build` 成功即覆盖完成）**：
 
-| 技术栈 | 多阶段目标体积 | runtime 基础镜像 |
-| --- | --- | --- |
-| Node | 150–250MB | node:22-alpine |
-| Go | 10–30MB | scratch |
+| 技术栈          | 多阶段目标体积   | runtime 基础镜像                  |
+| ------------ | --------- | ----------------------------- |
+| Node         | 150–250MB | node:22-alpine                |
+| Go           | 10–30MB   | scratch                       |
 | Java(Spring) | 150–200MB | eclipse-temurin:17-jre-alpine |
-| Python | 200–400MB | python:3.12-slim |
-| Ruby | 200–400MB | ruby:3.3-slim |
-| PHP | 150–250MB | php:8.3-cli-alpine |
-| Rust | 5–20MB | scratch |
+| Python       | 200–400MB | python:3.12-slim              |
+| Ruby         | 200–400MB | ruby:3.3-slim                 |
+| PHP          | 150–250MB | php:8.3-cli-alpine            |
+| Rust         | 5–20MB    | scratch                       |
 
 > 七门全绿 = 覆盖达成。任意一门失败先查第 0 步镜加是否生效 + 卡点自救。
 
@@ -466,6 +537,7 @@ done
 ## 4. 深度优化示范（选 1 门做透：Go 或 Java）
 
 挑 **Go**（最易压到 scratch）或 **Java**（杭州对口）做完整优化，作为面试可讲的「标杆产出」：
+
 
 - [ ] 基础镜像钉版本且最小（alpine / slim / jre-alpine / scratch，不用 latest / 完整 ubuntu / 完整 JDK）
 - [ ] 多阶段：build 工具链只在第一阶段，最终镜像无编译器（`docker history` 或 `docker run --rm <镜像> which go/mvn` 应为空）
@@ -483,7 +555,7 @@ done
 
 ```bash
 # 1. 登录（密码=ACR 个人版「访问凭证」里设的登录密码，非阿里云登录密码）
-docker login --username=<你的阿里云账号> registry.cn-hangzhou.aliyuncs.com
+docker login --username=学徒321 registry.cn-hangzhou.aliyuncs.com
 
 # 2. 打 tag（以 go-demo 为例；java 同理换目录/标签）
 docker tag day1-go-demo registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
@@ -505,6 +577,7 @@ docker pull registry.cn-hangzhou.aliyuncs.com/devops-journey/day1-demo:go-v1
 > 中间件通常不从零编译，多阶段用于「烘焙配置 / 预装插件 / 源码定制」。完整版见 `docker-multistage-allstacks.md` §8。两例速通：
 
 **6.1 Nginx 静态前端（Node 构建 → Nginx 托管，约 50MB）**
+
 ```dockerfile
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -514,7 +587,9 @@ FROM nginx:1.27-alpine AS runtime
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 80
 ```
+
 **6.2 Redis 自编译裁剪（debian:bookworm-slim，约 40–60MB）**
+
 ```dockerfile
 FROM debian:bookworm AS build
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential wget ca-certificates && rm -rf /var/lib/apt/lists/*
@@ -527,6 +602,7 @@ USER 1000
 EXPOSE 6379
 CMD ["redis-server"]
 ```
+
 > MySQL / Kafka / RocketMQ / RabbitMQ 多阶段多为「官方镜像 + 烘焙配置/插件」，详见手册 §8，不在本晚强制范围。
 
 ---
@@ -562,6 +638,7 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 
 - **pull 超时 / 基础镜像拉不到**：确认第 0 步 `Registry Mirrors` 首位为阿里云专属 `https://<实例ID>.mirror.aliyuncs.com`；极新 tag（如刚发的基础镜像）专属加速器可能未同步，临时 `export https_proxy=http://127.0.0.1:7897` 或改稍旧已缓存 tag。
 - **Go 跑 scratch 报 `no such file` / panic**：漏 `CGO_ENABLED=0`，重 build；需出网再确认带了 `ca-certificates.crt`。
+- **任何语言 `go mod tidy` / `npm ci` / `pip install` / `cargo build` / `mvn` / `composer` / `bundle` 报 `i/o timeout` 或 `dial tcp ...:443`**：都是默认境外源被墙。主机侧先按 §0.5 配全局国内源；Docker build 内已内置对应镜像（Go `GOPROXY` / npm `npm_config_registry` / pip `PIP_INDEX_URL` / cargo `config.toml` / Maven `settings.xml` / Composer `composer config` / Bundler `bundle config mirror`），无需额外操作。
 - **Java `target/*.jar` 匹配不到**：确认 `mvn package` 成功产出 jar。
 - **Python `pip install` 报编译错**：`build` 阶段已装 `gcc`，缺 `-dev` 包（如 `libpq-dev`）按需补。
 - **Ruby bundle 报权限/编译错**：build 阶段装 `build-essential`；runtime 只装运行时库 `libpq5`。
