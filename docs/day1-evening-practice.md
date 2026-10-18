@@ -552,10 +552,10 @@ cd ..
 
 ```dockerfile
 # rust-demo/Dockerfile
-# 注意：Rust 是「快速演进」的语言工具链，钉死具体补丁（如 1.83.0 / 1.87.0）会反复被 MSRV / edition 卡死
-# （1.83 不认 edition2024，1.87 又被上游依赖 rust-version>=1.88 拒绝）。改用浮动主版本 `rust:1-alpine`，
-# 永远指向最新 stable，既不会被 MSRV 拒、也不会 not found。若要可复现，build 后 `rustc --version` 记死实际版本即可。
-FROM rust:1-alpine AS build
+# 注意：本环境走阿里云镜加，浮动 tag（rust:1-alpine / rust:1）会被镜加缓存成**陈旧 digest**（曾返回 cargo<1.56 的远古版，
+# 报 edition2021 需 nightly）。故 Rust 必须**钉具体、且较新的版本**，由镜加按 digest 现拉最新层。
+# 当前稳定版 1.99.1（2026-10-13）；若未来又报 `rustc X.Y is not supported`，升到当时最新稳定版号即可（查 https://static.rust-lang.org/dist/channel-rust-stable.toml）。
+FROM rust:1.99.1-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache musl-dev \
  && mkdir -p /usr/local/cargo \
@@ -724,4 +724,4 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 - **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
 - **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
 - **push `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`**（ACR 专属）：Docker 29.x 默认给镜像附 provenance 空 manifest，ACR 个人版不认。**正解**：不要用 `docker build` + `docker push`，改用 `docker buildx build --provenance=false --sbom=false -t <镜像> --push .` 直接构建并推送；或先 `export BUILDX_PROVENANCE=false` 永久关闭。与镜加无关、与镜像内容无关。
-- **Rust `cargo build` 报 `feature edition2024 is required ... not stabilized in this version of Cargo (1.83.0)`** 或 **`rustc 1.87.0 is not supported by the following packages`**（MSRV 检查）：都是基础镜像 Rust 太旧被上游依赖拒绝。`edition2024` 在 Rust 1.85.0 才进 stable；而 `actix-web` 依赖树里较新的传递依赖（cpufeatures 等）会要求 `rust-version >= 1.88+`，于是 1.83 / 1.87 都被拒。**正解**：不要反复钉具体补丁（会一直被新 MSRV 卡），直接用浮动主版本 `rust:1-alpine`（永远最新 stable）。与镜像源/网络无关，纯粹升工具链版本。
+- **Rust `cargo build` 报 `feature edition2024 is required` / `rustc 1.87.0 is not supported by the following packages`**（MSRV）或 **`feature edition2021 is required ... does not support nightly features`**：前两类是镜像 Rust 太旧被上游依赖拒绝（edition2024 在 1.85.0 stable、依赖 MSRV 要求 ≥1.88+）。**第三类最隐蔽**：`edition2021 is required + nightly` 只在 cargo<1.56 出现，说明镜加把浮动 tag `rust:1-alpine` 缓存成了**远古 digest**——不是你 Cargo.toml 的问题。**正解**：本环境（阿里云镜加）Rust **必须钉具体且较新的版本**（当前 `rust:1.99.1-alpine`），不要依赖浮动 tag；钉好后 edition2021/MSRV 一并满足。查最新版号：<https://static.rust-lang.org/dist/channel-rust-stable.toml>。
