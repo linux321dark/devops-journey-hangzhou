@@ -108,6 +108,9 @@ cat > ~/.m2/settings.xml <<'EOF'
 EOF
 # Composer (PHP)
 composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
+# ⚠️ 阿里云 Composer 镜像偶尔滞后个别包（2026-10-18 实战：psr/http-factory 只缓存到 1.0.x，缺 1.1.0，
+# 导致 slim/slim ^4.14 解析失败）。遇「require 的包在镜像里找不到匹配版本」先比对官方源
+# （https://repo.packagist.org/p2/<vendor>/<pkg>.json 看是否有新版本），必要时临时切官方生成 lock。
 # RubyGems / Bundler
 # 注意：原 `gems.ruby-china.com` 2026 起证书域名不匹配(SSL hostname mismatch)，已不可靠 → 改用阿里云官方 rubygems 镜像
 gem sources --add https://mirrors.aliyun.com/rubygems/ --remove https://rubygems.org/
@@ -496,20 +499,32 @@ cd ..
 # 若 composer.json 带 require-dev 就报 "Running update with --no-dev ... require-dev is ignored" 阻塞失败）：
 #   cd php-demo && composer install && cd ..
 # 且 composer.json 切勿含 require-dev 段（生产镜像不需要 dev 依赖；带了 --no-dev 仍会 dev blocking）。
+# ⚠️ 额外坑（2026-10-18 实战）：阿里云 Composer 镜像(mirrors.aliyun.com/composer) 对 psr/http-factory 的
+# 元数据陈旧——只缓存到 1.0.x，缺 1.1.0，而 slim/slim ^4.14 要求 psr/http-factory ^1.1 → 解析失败。
+# 主机侧生成 lock 前先临时切官方源（见下），否则 update 也解析不动：
+#   cd php-demo
+#   composer config -g repos.packagist composer https://repo.packagist.org   # 临时切官方，绕过阿里云陈旧元数据
+#   composer update --no-dev                                              # 生成 composer.lock（解析到 psr/http-factory 1.1.0）
+#   grep -A4 '"name": "psr/http-factory"' composer.lock                   # 确认锁到 1.1.0
+#   # 可选复原：composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
+#   cd ..
 ```
 
 ```dockerfile
 # php-demo/Dockerfile
 FROM composer:2 AS build
 WORKDIR /app
-RUN composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
+# ⚠️ 阿里云 Composer 镜像(mirrors.aliyun.com/composer) 对 psr/http-factory 1.1.0 元数据陈旧（仅缓存 1.0.x），
+# 会导致 slim/slim ^4.14 解析失败。这里直接用官方 Packagist 兜底——composer.lock 已锁定版本，
+# install 走 lock 内 GitHub dist URL，确定性不受影响，也不会再被镜像陈旧坑。
+ENV COMPOSER_ALLOW_SUPERUSER=1
+RUN composer config -g repos.packagist composer https://repo.packagist.org
 # 关键：必须连同 composer.lock 一起 COPY——否则镜像内无 lock，composer install 会退化为 update 模式，
 # 而 Composer 2 在 --no-dev 下仍校验 require-dev 约束，一旦 composer.json 带 require-dev（或锁缺失）
 # 就报 "Running update with --no-dev ... require-dev is ignored" 阻塞失败（exit 2）。
-# 若目录还没有 composer.lock，先在本机 ECS 用同个阿里云源跑 `composer install` 生成；或临时改用下方 update 方案。
+# 若目录还没有 composer.lock，先在本机 ECS 用官方源跑 `composer update --no-dev` 生成（见上方 bash 段）。
 COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --optimize-autoloader --ignore-platform-reqs
-# 备选（目录确无 composer.lock 时）：RUN composer update --no-dev --no-scripts --optimize-autoloader --ignore-platform-reqs
 COPY . .
 
 FROM php:8.3-cli-alpine AS runtime
@@ -729,6 +744,8 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 - **Python `pip install` 报编译错**：`build` 阶段已装 `gcc`，缺 `-dev` 包（如 `libpq-dev`）按需补。
 - **Ruby bundle 报权限/编译错**：build 阶段装 `build-essential`；runtime 只装运行时库 `libpq5`。
 - **PHP Slim 报类找不到**：确认 `composer install` 生成了 `vendor/autoload.php` 且被 `index.php` require。
+- **PHP `composer install`/`update` 报「require 的包在镜像里找不到匹配版本」**（如 `slim/slim` 要求 `psr/http-factory ^1.1` 但阿里云镜像只列 1.0.x）：这是**阿里云 Composer 镜像元数据陈旧**（个别包滞后），不是版本写错。先到官方源核实该版本确实存在（`https://repo.packagist.org/p2/psr/http-factory.json` 看是否在列），确实存在就临时切官方源解析：`composer config -g repos.packagist composer https://repo.packagist.org` 后 `composer update --no-dev` 生成 `composer.lock`；Dockerfile 内也改用官方源（见 §2.6）。`composer.lock` 提交后，`composer install` 走 lock 内 GitHub dist URL，不再受镜像陈旧影响。
+- **PHP `docker build` 卡在 `Continue as root/super user [yes]?` 或静默失败**：composer 以 root 运行会交互式询问，非 TTY 的 build 环境无法应答会卡死/失败。Dockerfile 内 `composer` 命令前加 `ENV COMPOSER_ALLOW_SUPERUSER=1` 跳过该提示（见 §2.6）。
 - **Rust scratch 起不来**：确认用的是 `rust:*-alpine` + `musl-dev` 出静态二进制；否则改 `debian:bookworm-slim` 运行。
 - **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
 - **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
