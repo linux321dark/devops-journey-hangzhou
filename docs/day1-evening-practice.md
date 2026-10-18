@@ -591,6 +591,8 @@ done
 | Rust         | 5–20MB    | scratch                       |
 
 > 七门全绿 = 覆盖达成。任意一门失败先查第 0 步镜加是否生效 + 卡点自救。
+>
+> **为何这里仍用 `docker build`（不改 buildx）**：本步是**本地**构建 + 量体积 + 本地 `run` 验证，**不推 ACR**，所以不会触发 §5 那种 `oci.empty` 空 manifest 拒收（provenance 只在推 ACR 时才被阿里云拒）。刻意保留 `docker build` 还有个好处——镜像会直接进本地 `docker images`，`docker images day1-$d` 才能量到体积。若改 `docker buildx build` 反要补 `--load` 才进本地仓库，纯增复杂度。**只有 §5「推 ACR」才走 buildx 形式**。
 
 ---
 
