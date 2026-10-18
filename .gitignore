@@ -1,0 +1,23 @@
+# ---- macOS 元数据 ----
+.DS_Store
+
+# ---- 与本项目无关的杂文件（请确认后删除，勿提交） ----
+404.sh
+
+# ---- 密钥 / 凭证（严禁入库） ----
+.env
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+*.pem
+id_rsa
+id_rsa.pub
+*.key
+credentials.json
+ak.csv
+
+# ---- 构建 / 依赖缓存 ----
+node_modules/
+target/
+__pycache__/
+*.class
