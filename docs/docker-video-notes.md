@@ -6,6 +6,21 @@
 
 ---
 
+## 零、官方权威参考（以官方文档为准 · 中文镜像首选）
+
+> 本笔记基于视频/社区整理"讲什么、为什么"；**遇到语法/参数细节必须回到官方文档**——它是唯一权威。你提供的两条官方参考已核实在线，按"国内优先 / 官方中文首选"原则优先用 `docs.docker.top` 中文镜像：
+
+| 参考 | 中文镜像（首选） | 官方英文（兜底） |
+| --- | --- | --- |
+| **Dockerfile 指令参考**（全部 18 条指令的权威释义） | https://docs.docker.top/reference/dockerfile | https://docs.docker.com/reference/dockerfile |
+| **Docker CLI 命令参考**（build/run/image/container/network/volume 等总入口） | https://docs.docker.top/reference/cli/docker/ | https://docs.docker.com/reference/cli/docker/ |
+
+- 你原链接带 `?spm=...`（阿里云转发追踪参数），文档里统一用干净链接。
+- CLI 子命令深链格式：`https://docs.docker.top/reference/cli/docker/<对象>/<动作>/`，例如构建 `image/build/`、运行 `container/run/`、网络 `network/create/`、卷 `volume/create/`。
+- Dockerfile 各指令在参考页内有独立锚点（如 `#from` `#run` `#copy` `#entrypoint`），页内搜索指令名即可定位。
+
+---
+
 ## 一、看哪几集（国内 B站 · 按优先级）
 
 | 课程 | BV / 地址 | 讲 Dockerfile / 多阶段的集 | 时长 | 定位 |
@@ -65,6 +80,8 @@
 
 > `CMD` vs `ENTRYPOINT`：ENTRYPOINT 定"程序"，CMD 给"默认参数"。生产常用 `ENTRYPOINT ["java","-jar"]` + `CMD ["app.jar"]` 组合——`docker run myapp other.jar` 能覆盖 jar 名。
 
+> 📌 **官方权威释义（必查）**：上面 18 条指令的参数、语法、默认值、注意事项，以 Dockerfile 官方参考为准——中文镜像 https://docs.docker.top/reference/dockerfile （英文兜底 https://docs.docker.com/reference/dockerfile ）。页内每条指令有独立锚点（如 `#from` `#run` `#copy` `#entrypoint`），也可直接页内搜索指令名定位。视频/社区笔记有出入时，**以官方为准**。
+
 ### 3.3 仓库类操作（构建后 · 与镜像仓库交互）
 
 > 以下不是 Dockerfile 指令，而是 `docker` CLI 对镜像仓库（Docker Hub / 阿里云 ACR / 私有仓库）的操作。Day 1 下午推 ACR 个人版必用。
@@ -78,6 +95,32 @@
 | `docker history` | 查看镜像层构成 | `docker history myapp:1.0` |
 
 > ACR 实操提示：推送前先 `docker login --username=你的阿里云账号 registry.cn-hangzhou.aliyuncs.com`（密码用 ACR 登录密码/临时令牌），再 `tag` + `push`。详见 `docker-multistage-allstacks.md` 与学习计划 §6。
+
+---
+
+### 3.4 Docker CLI 命令官方参考对照
+
+> 下面命令的**权威参数说明**见 Docker CLI 官方参考（中文镜像首选）：https://docs.docker.top/reference/cli/docker/ 。子命令深链格式 `.../docker/<对象>/<动作>/`，旧式顶层命令（如 `docker build`）与对象式（`docker image build`）等价，已核实 `image/build/`、`container/run/` 在线。
+
+| 用途 | 命令（对象式 / 旧式） | 官方中文参考 |
+| --- | --- | --- |
+| 构建镜像（Day1 核心） | `docker image build` / `docker build` | https://docs.docker.top/reference/cli/docker/image/build/ |
+| 列出本地镜像（看体积） | `docker image ls` / `docker images` | https://docs.docker.top/reference/cli/docker/image/ls/ |
+| 删除镜像 | `docker image rm` / `docker rmi` | https://docs.docker.top/reference/cli/docker/image/rm/ |
+| 打仓库标签（推 ACR 前） | `docker image tag` / `docker tag` | https://docs.docker.top/reference/cli/docker/image/tag/ |
+| 推送镜像 | `docker image push` / `docker push` | https://docs.docker.top/reference/cli/docker/image/push/ |
+| 拉取镜像 | `docker image pull` / `docker pull` | https://docs.docker.top/reference/cli/docker/image/pull/ |
+| 查看镜像层构成 | `docker image history` | https://docs.docker.top/reference/cli/docker/image/history/ |
+| 运行容器（-p 映射 / -v 挂载 / --network） | `docker container run` / `docker run` | https://docs.docker.top/reference/cli/docker/container/run/ |
+| 列出容器 | `docker container ls` / `docker ps` | https://docs.docker.top/reference/cli/docker/container/ls/ |
+| 进容器排错 | `docker container exec` | https://docs.docker.top/reference/cli/docker/container/exec/ |
+| 看容器日志 | `docker container logs` | https://docs.docker.top/reference/cli/docker/container/logs/ |
+| 删除容器 | `docker container rm` | https://docs.docker.top/reference/cli/docker/container/rm/ |
+| 自定义网络 | `docker network create` / `ls` / `connect` | https://docs.docker.top/reference/cli/docker/network/ |
+| 数据卷 | `docker volume create` / `ls` | https://docs.docker.top/reference/cli/docker/volume/ |
+| 仓库认证（推 ACR 前 login） | `docker login` / `docker logout` | https://docs.docker.top/reference/cli/docker/login/ |
+
+> 链接为官方 CLI 参考标准路径（已核实 `image/build/`、`container/run/` 在线）；如个别动作名有差异，在对应页面内搜索命令即可定位。
 
 ---
 
@@ -267,5 +310,6 @@ ENTRYPOINT ["/myapp"]
 - 尚硅谷 基础篇（周阳）BV1Ls411n7mx：https://www.bilibili.com/video/BV1Ls411n7mx
 - 黑马程序员 Docker BV1CJ411T7BK：https://www.bilibili.com/video/BV1CJ411T7BK
 - 官方中文文档（多阶段构建）：https://docs.docker.top/build/building/multi-stage/
+- **官方权威参考（本笔记以之为准）**：Dockerfile 指令参考 https://docs.docker.top/reference/dockerfile （英文 https://docs.docker.com/reference/dockerfile ）；Docker CLI 命令参考 https://docs.docker.top/reference/cli/docker/ （英文 https://docs.docker.com/reference/cli/docker/ ）
 - 多阶段构建社区笔记：CSDN `2603_94880596` 文、人人代码《1.2GB 砍到 100MB 内》、Easton Dev《1GB 瘦身到 10MB》、博客园 `llcdbk` Node 双阶段实战、掘金 Dockerfile 详解
 - 体积优化实战（Java/Python/前端）：devcxl.cn《Dockerfile 多阶段构建与镜像体积优化》
