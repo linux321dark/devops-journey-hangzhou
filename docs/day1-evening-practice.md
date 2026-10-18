@@ -24,7 +24,7 @@ pwd        # 记住这个目录，下文全相对它
 
 - [x] ECS 可 SSH 登录
 - [x] 已 `docker info | grep -iA3 "registry mirrors"` 确认**只**列出你的阿里云实例专属地址 `https://<实例ID>.mirror.aliyuncs.com`（内网最快）；若为空 / 含第三方死源(xuanyuan/daocloud/nju) / 公共 `mirror.aliyuncs.com`，先按学习计划 §6 / 坑16 改 `/etc/docker/daemon.json` 并 `sudo systemctl restart docker` 再 build（否则 `FROM` 会报 **not found**）
-- [ ] ACR 个人版仓库已建：登录 `https://cr.console.aliyun.com` → 个人版 → 命名空间（如 `devops-journey`）→ 仓库（如 `day1-demo`）
+- [ ] ACR 个人版仓库已建：登录 `https://cr.console.aliyun.com` → 个人版（**地域选 `cn-hangzhou`，须与 registry 域名一致**）→ **命名空间 `devops-journey` 必须已建** → 仓库 `day1-demo` 已建 **或** 命名空间开了「自动创建仓库」（否则 push 报 `repository does not exist` / `insufficient_scope`）
 - [x] 已 `cd` 到工作目录（本文约定 `~/devops-day1`）
 - [ ] 已按 §0.4 安装 ECS 主机基础工具链
 - [ ] 已按 §0.5 配好国内包管理器镜像源（否则拉依赖超时）
@@ -647,8 +647,13 @@ done
 > **⚠️ ECS 上 Docker 29.x 必读（已踩坑）**：Docker 29 默认给镜像附加 provenance（构建来源/SLSA 产物），推送时会多塞一个 `application/vnd.oci.empty.v1+json`（空 manifest），而**阿里云 ACR 个人版不认这个 manifest class**，会直接报 `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`。这不是镜像内容问题。**正解：用 `docker buildx build` 带 `--provenance=false --sbom=false` 直接构建并推送**（不要用 `docker build` + `docker push` 经典两步，那套会把空 manifest 一起推上去被拒）。
 
 ```bash
-# 1. 登录（密码=ACR 个人版「访问凭证」里设的登录密码，非阿里云登录密码）
-docker login --username=学徒321 registry.cn-hangzhou.aliyuncs.com
+# 1. 登录（⚠️ 用户名/密码不是阿里云控制台登录密码！）
+#    去 ACR 控制台 → 个人版 → 访问凭证 页，直接【复制它给的完整 docker login 命令】（用户名已填对）；
+#    或手动：用户名=该页显示的「登录名」（主账号是登录名、非纯数字账号ID；RAM用户是 username@xxx.onaliyun.com），
+#            密码=该页单独设置的「Registry 专用固定密码」（不是控制台密码、不是 AccessKey）。
+#    个人版 Registry 域名固定 registry.cn-hangzhou.aliyuncs.com（须与 ACR 实例地域一致；实例在别地域则改域名里的 cn-hangzhou）。
+echo '你的ACR访问凭证固定密码' | docker login --username=<访问凭证页的登录名> --password-stdin registry.cn-hangzhou.aliyuncs.com
+# 必须看到 Login Succeeded；登录态写入 ~/.docker/config.json（root 用户是 /root/.docker/config.json）
 
 # 2. 在 demo 目录内，用 buildx 构建 + 推送（provenance/sbom 关闭，否则 ACR 拒收）
 cd ~/devops-day1/go-demo        # 深度那门目录
@@ -747,7 +752,7 @@ git push -u origin main   # 密码填 jihulab Personal Access Token
 - **PHP `composer install`/`update` 报「require 的包在镜像里找不到匹配版本」**（如 `slim/slim` 要求 `psr/http-factory ^1.1` 但阿里云镜像只列 1.0.x）：这是**阿里云 Composer 镜像元数据陈旧**（个别包滞后），不是版本写错。先到官方源核实该版本确实存在（`https://repo.packagist.org/p2/psr/http-factory.json` 看是否在列），确实存在就临时切官方源解析：`composer config -g repos.packagist composer https://repo.packagist.org` 后 `composer update --no-dev` 生成 `composer.lock`；Dockerfile 内也改用官方源（见 §2.6）。`composer.lock` 提交后，`composer install` 走 lock 内 GitHub dist URL，不再受镜像陈旧影响。
 - **PHP `docker build` 卡在 `Continue as root/super user [yes]?` 或静默失败**：composer 以 root 运行会交互式询问，非 TTY 的 build 环境无法应答会卡死/失败。Dockerfile 内 `composer` 命令前加 `ENV COMPOSER_ALLOW_SUPERUSER=1` 跳过该提示（见 §2.6）。
 - **Rust scratch 起不来**：确认用的是 `rust:*-alpine` + `musl-dev` 出静态二进制；否则改 `debian:bookworm-slim` 运行。
-- **ACR 登录失败**：密码是 ACR 访问凭证密码，不是阿里云登录密码；控制台「访问凭证」重置。
+- **ACR 登录失败 / push 报 `insufficient_scope: authorization failed` / `repository does not exist or may require authorization`**：都是 ACR 拒 push 权限（与坑18 的 `oci.empty` manifest 拒收**完全不同**），按序查：① 是否登录且未过期——`cat /root/.docker/config.json` 看有无 `registry.cn-hangzhou.aliyuncs.com` 的 `auth`；没有就重登（见 §5，用户名/密码取自 ACR 控制台「访问凭证」页，非控制台密码）；② **命名空间 `devops-journey` 是否已建**、仓库 `day1-demo` 是否已建或命名空间开了「自动创建仓库」——个人版推送前这两样必须有，否则报 `repository does not exist`；③ registry 域名里的地域（`cn-hangzhou`）与 ACR 实例地域是否一致；④ 若用 `sudo docker` 登录却普通用户 push（或反之），凭证文件 `/root/.docker/config.json` 与 `~/.docker/config.json` 错位也会 `insufficient_scope`——统一用一个身份（ECS 上建议直接 root）登录+推送。
 - **push `denied: requested access`**：tag 的命名空间/仓库名与 ACR 里建的不一致，先核对。
 - **push `error from registry: unknown manifest class for application/vnd.oci.empty.v1+json`**（ACR 专属）：Docker 29.x 默认给镜像附 provenance 空 manifest，ACR 个人版不认。**正解**：不要用 `docker build` + `docker push`，改用 `docker buildx build --provenance=false --sbom=false -t <镜像> --push .` 直接构建并推送；或先 `export BUILDX_PROVENANCE=false` 永久关闭。与镜加无关、与镜像内容无关。
 - **Rust `cargo build` 报 `feature edition2024 is required` / `rustc 1.87.0 is not supported by the following packages`**（MSRV）或 **`feature edition2021 is required ... does not support nightly features`**：前两类是镜像 Rust 太旧被上游依赖拒绝（edition2024 在 1.85.0 stable、依赖 MSRV 要求 ≥1.88+）。**第三类最隐蔽**：`edition2021 is required + nightly` 只在 cargo<1.56 出现，说明镜加把浮动 tag `rust:1-alpine` 缓存成了**远古 digest**——不是你 Cargo.toml 的问题。**正解**：本环境（阿里云镜加）Rust **必须钉具体且较新的版本**（当前 `rust:1.99.1-alpine`），不要依赖浮动 tag；钉好后 edition2021/MSRV 一并满足。查最新版号：<https://static.rust-lang.org/dist/channel-rust-stable.toml>。
