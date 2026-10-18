@@ -492,6 +492,10 @@ $app->run();
 EOF
 cp ../.dockerignore .
 cd ..
+# ⚠️ 构建前必须先在主机侧生成 composer.lock（否则 Dockerfile 内 composer install 无 lock 会退化为 update，
+# 若 composer.json 带 require-dev 就报 "Running update with --no-dev ... require-dev is ignored" 阻塞失败）：
+#   cd php-demo && composer install && cd ..
+# 且 composer.json 切勿含 require-dev 段（生产镜像不需要 dev 依赖；带了 --no-dev 仍会 dev blocking）。
 ```
 
 ```dockerfile
@@ -499,8 +503,13 @@ cd ..
 FROM composer:2 AS build
 WORKDIR /app
 RUN composer config -g repos.packagist composer https://mirrors.aliyun.com/composer/
-COPY composer.json ./
-RUN composer install --no-dev --no-scripts --optimize-autoloader
+# 关键：必须连同 composer.lock 一起 COPY——否则镜像内无 lock，composer install 会退化为 update 模式，
+# 而 Composer 2 在 --no-dev 下仍校验 require-dev 约束，一旦 composer.json 带 require-dev（或锁缺失）
+# 就报 "Running update with --no-dev ... require-dev is ignored" 阻塞失败（exit 2）。
+# 若目录还没有 composer.lock，先在本机 ECS 用同个阿里云源跑 `composer install` 生成；或临时改用下方 update 方案。
+COPY composer.json composer.lock ./
+RUN composer install --no-dev --no-scripts --optimize-autoloader --ignore-platform-reqs
+# 备选（目录确无 composer.lock 时）：RUN composer update --no-dev --no-scripts --optimize-autoloader --ignore-platform-reqs
 COPY . .
 
 FROM php:8.3-cli-alpine AS runtime
